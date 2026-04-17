@@ -18,3 +18,5 @@ export const env = {
 };
 
 export const isProduction = env.nodeEnv === 'production';
+export const sessionCookieSameSite = isProduction ? 'none' : 'lax';
+export const sessionCookieSecure = isProduction;

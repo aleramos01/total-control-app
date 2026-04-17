@@ -3,7 +3,7 @@ import { and, eq, gt, lte } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { sessions, users } from '../db/schema.js';
 import { addDays, createId, createSessionToken, nowIso, sha256 } from './utils.js';
-import { isProduction } from './env.js';
+import { sessionCookieSameSite, sessionCookieSecure } from './env.js';
 
 const SESSION_COOKIE = 'tc_session';
 
@@ -27,9 +27,9 @@ export async function createUserSession(reply: FastifyReply, userId: string) {
 
   reply.setCookie(SESSION_COOKIE, token, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: sessionCookieSameSite,
     path: '/',
-    secure: isProduction,
+    secure: sessionCookieSecure,
     maxAge: 14 * 24 * 60 * 60,
   });
 }
@@ -42,9 +42,9 @@ export async function clearUserSession(reply: FastifyReply, token?: string) {
 
   reply.clearCookie(SESSION_COOKIE, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: sessionCookieSameSite,
     path: '/',
-    secure: isProduction,
+    secure: sessionCookieSecure,
   });
 }
 

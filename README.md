@@ -43,6 +43,30 @@ This repository is the main product line of Total Control. It contains the curre
 - Output directory: `dist`
 - Required env var: `VITE_API_BASE_URL`
 
+### Railway backend settings
+
+- Project root: `backend`
+- Config as Code file: `/backend/railway.json`
+- Build command: `npm run build`
+- Start command: `npm start`
+- Healthcheck path: `/health`
+- Volume mount path: `/app/data`
+
+Required backend env vars:
+
+- `NODE_ENV=production`
+- `SESSION_SECRET=<strong-random-secret>`
+- `DATABASE_URL=./data/total-control.sqlite`
+- `CORS_ORIGIN=https://<your-frontend>.vercel.app`
+- `APP_BASE_URL=https://<your-frontend>.vercel.app`
+
+Deploy order:
+
+1. Deploy `backend/` to Railway with a persistent volume mounted at `/app/data`
+2. Copy the Railway public backend URL
+3. Set `VITE_API_BASE_URL` in the Vercel frontend project
+4. Redeploy the frontend on Vercel
+
 ## Versioning
 
 - Current MVP baseline: `0.1.0`
@@ -83,7 +107,7 @@ Minimum pre-deploy check:
 ## Security defaults
 
 - Passwords hashed with `argon2`
-- Session cookie uses `httpOnly` and `sameSite=lax`
+- Session cookie uses `httpOnly`, `SameSite=None` in production and `SameSite=Lax` outside production
 - No API secrets exposed in the frontend
 - Financial data persisted in SQLite, not browser storage
 - Recommended production runtime: Node `20+`
