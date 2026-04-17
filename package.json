@@ -1,0 +1,16 @@
+{
+  "name": "total-control-app-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:front": "npm --prefix Front-end run dev",
+    "dev:back": "npm --prefix backend run dev",
+    "build:front": "npm --prefix Front-end run build",
+    "build:back": "npm --prefix backend run build",
+    "build": "npm run build:back && npm run build:front",
+    "test:front": "npm --prefix Front-end run test",
+    "test:back": "npm --prefix backend run test",
+    "test": "npm run test:back && npm run test:front",
+    "verify": "npm run test && npm run build"
+  }
+}

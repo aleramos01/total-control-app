@@ -1,0 +1,28 @@
+{
+  "name": "total-control-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.2.0",
+    "@fastify/helmet": "^13.0.2",
+    "argon2": "^0.41.1",
+    "better-sqlite3": "^11.7.0",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.8.5",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.14.0",
+    "tsx": "^4.19.3",
+    "typescript": "~5.8.2"
+  }
+}

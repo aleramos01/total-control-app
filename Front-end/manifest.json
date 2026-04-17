@@ -1,0 +1,9 @@
+{
+  "name": "Total Control Financial",
+  "short_name": "Control",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "description": "Acompanhe suas finanças pessoais de forma inteligente e sem esforço."
+}
