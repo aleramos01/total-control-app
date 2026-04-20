@@ -209,10 +209,25 @@ export function buildTransactionQuery(filters: TransactionFilters) {
   if (filters.type) query.set('type', filters.type);
   if (filters.category) query.set('category', filters.category);
   if (filters.status) query.set('status', filters.status);
+  if (filters.preset) query.set('preset', filters.preset);
   if (filters.from) query.set('from', new Date(filters.from).toISOString());
   if (filters.to) query.set('to', new Date(filters.to).toISOString());
   const result = query.toString();
   return result ? `?${result}` : '';
+}
+
+export function addMonthsToStoredDate(value: string, months: number) {
+  const date = parseStoredDate(value);
+  date.setMonth(date.getMonth() + months);
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0)).toISOString();
+}
+
+export function formatMonthGroupLabel(value: string, locale: string) {
+  const [year, month] = value.split('-').map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString(locale, {
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 export function suggestCategoryFromDescription(

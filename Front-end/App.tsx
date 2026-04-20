@@ -13,9 +13,10 @@ import * as api from './services/api';
 import Spinner from './components/Spinner';
 import AuthPage from './components/AuthPage';
 import { useAuth } from './hooks/useAuth';
-import { BrandSettings, CustomCategory, ExportPayload, Transaction, TransactionFilters, TransactionType } from './types';
+import { BrandSettings, CustomCategory, ExportPayload, InviteInfo, Transaction, TransactionFilters, TransactionType } from './types';
 import UpcomingBills from './components/UpcomingBills';
 import BrandSettingsModal from './components/BrandSettingsModal';
+import InviteManagementModal from './components/InviteManagementModal';
 import { buildTransactionsCsv } from './lib/transactions';
 import ExpenseChart from './components/ExpenseChart';
 import { BarChartIcon } from './components/icons/BarChartIcon';
@@ -36,6 +37,10 @@ const emptyBrandSettings: BrandSettings = {
   marketingHeadline: 'Controle financeiro simples, seguro e pronto para venda.',
 };
 
+const defaultCurrentMonthFilters: TransactionFilters = {
+  preset: 'current_month',
+};
+
 type MobileTab = 'summary' | 'transactions' | 'account';
 
 const App: React.FC = () => {
@@ -49,13 +54,15 @@ const App: React.FC = () => {
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
-  const [filters, setFilters] = useState<TransactionFilters>({});
+  const [filters, setFilters] = useState<TransactionFilters>(defaultCurrentMonthFilters);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [activeTab, setActiveTab] = useState<MobileTab>('summary');
+  const [latestInvite, setLatestInvite] = useState<InviteInfo | null>(null);
 
   const fetchBrand = useCallback(async () => {
     try {
@@ -155,13 +162,12 @@ const App: React.FC = () => {
 
   const handleSaveTransaction = useCallback(async (transaction: Omit<Transaction, 'id'> & { id?: string }) => {
     try {
-      const savedTransaction = await api.saveTransaction(transaction);
-      setTransactions(prev => {
-        if (transaction.id) {
-          return prev.map(item => item.id === savedTransaction.id ? savedTransaction : item);
-        }
-        return [savedTransaction, ...prev];
-      });
+      const savedTransactions = await api.saveTransactionBatch(transaction);
+      if (transaction.id) {
+        setTransactions(prev => prev.map(item => item.id === savedTransactions[0].id ? savedTransactions[0] : item));
+      } else {
+        fetchData();
+      }
       showNotification(transaction.id ? t('transaction_updated_success') : t('transaction_added_success'), 'success');
       setIsModalOpen(false);
       setEditingTransaction(null);
@@ -169,7 +175,7 @@ const App: React.FC = () => {
       const message = error instanceof Error ? error.message : 'Failed to save transaction';
       showNotification(message, 'error');
     }
-  }, [showNotification, t]);
+  }, [fetchData, showNotification, t]);
 
   const handleDeleteTransaction = useCallback(async (id: string) => {
     try {
@@ -222,6 +228,27 @@ const App: React.FC = () => {
       setIsBrandModalOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save brand settings';
+      showNotification(message, 'error');
+    }
+  }, [showNotification, t]);
+
+  const handleGenerateInvite = useCallback(async (expiresInDays: number) => {
+    try {
+      const invite = await api.createInvite(expiresInDays);
+      setLatestInvite(invite);
+      showNotification(t('invite_created_success'), 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create invite';
+      showNotification(message, 'error');
+    }
+  }, [showNotification, t]);
+
+  const handleCopyInvite = useCallback(async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      showNotification(t('invite_copied_success'), 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to copy invite code';
       showNotification(message, 'error');
     }
   }, [showNotification, t]);
@@ -394,6 +421,11 @@ const App: React.FC = () => {
                         {t('categories')}
                       </button>
                       {user.role === 'admin' ? (
+                        <button type="button" className="button-secondary justify-center" onClick={() => setIsInviteModalOpen(true)}>
+                          {t('invite_management')}
+                        </button>
+                      ) : null}
+                      {user.role === 'admin' ? (
                         <button type="button" className="button-primary justify-center" onClick={() => setIsBrandModalOpen(true)}>
                           {t('manage_brand')}
                         </button>
@@ -494,6 +526,16 @@ const App: React.FC = () => {
           onClose={() => setIsBrandModalOpen(false)}
           settings={brandSettings}
           onSave={handleSaveBrandSettings}
+        />
+      ) : null}
+
+      {user.role === 'admin' ? (
+        <InviteManagementModal
+          isOpen={isInviteModalOpen}
+          onClose={() => setIsInviteModalOpen(false)}
+          latestInvite={latestInvite}
+          onGenerateInvite={handleGenerateInvite}
+          onCopyInvite={handleCopyInvite}
         />
       ) : null}
     </div>

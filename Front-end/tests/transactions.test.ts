@@ -7,6 +7,7 @@ test('buildTransactionQuery only serializes filled filters', () => {
   const query = buildTransactionQuery({
     q: 'mercado',
     type: TransactionType.EXPENSE,
+    preset: 'current_month',
     from: '2026-01-01',
     to: '2026-01-31',
   });
@@ -14,6 +15,7 @@ test('buildTransactionQuery only serializes filled filters', () => {
   assert.match(query, /^\?/);
   assert.match(query, /q=mercado/);
   assert.match(query, /type=expense/);
+  assert.match(query, /preset=current_month/);
   assert.match(query, /from=2026-01-01T00%3A00%3A00.000Z/);
   assert.match(query, /to=2026-01-31T00%3A00%3A00.000Z/);
 });

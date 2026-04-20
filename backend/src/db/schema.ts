@@ -19,6 +19,16 @@ export const sessions = sqliteTable('sessions', {
   createdAt: text('created_at').notNull(),
 });
 
+export const invites = sqliteTable('invites', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  createdByUserId: text('created_by_user_id').notNull(),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at'),
+  usedAt: text('used_at'),
+  usedByUserId: text('used_by_user_id'),
+});
+
 export const transactions = sqliteTable('transactions', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull(),
@@ -27,6 +37,10 @@ export const transactions = sqliteTable('transactions', {
   type: text('type').notNull(),
   categoryKey: text('category_key').notNull(),
   transactionDate: text('transaction_date').notNull(),
+  scheduleType: text('schedule_type').notNull().default('once'),
+  seriesId: text('series_id'),
+  installmentIndex: integer('installment_index'),
+  installmentCount: integer('installment_count'),
   isRecurring: integer('is_recurring', { mode: 'boolean' }).notNull().default(false),
   dueDate: text('due_date'),
   isPaid: integer('is_paid', { mode: 'boolean' }).notNull().default(false),

@@ -7,8 +7,8 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (data: { email: string; password: string }) => Promise<void>;
-  register: (data: { name: string; email: string; password: string }) => Promise<void>;
+  login: (data: { email: string; password: string; rememberMe?: boolean }) => Promise<void>;
+  registerWithInvite: (data: { name: string; email: string; password: string; inviteCode: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -32,13 +32,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     refreshUser().finally(() => setIsLoading(false));
   }, [refreshUser]);
 
-  const login = async (data: { email: string; password: string }) => {
+  const login = async (data: { email: string; password: string; rememberMe?: boolean }) => {
     const response = await api.loginUser(data);
     setUser(response.user);
   };
 
-  const register = async (data: { name: string; email: string; password: string }) => {
-    const response = await api.registerUser(data);
+  const registerWithInvite = async (data: { name: string; email: string; password: string; inviteCode: string }) => {
+    const response = await api.registerWithInvite(data);
     setUser(response.user);
   };
 
@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, registerWithInvite, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

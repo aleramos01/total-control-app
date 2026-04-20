@@ -26,6 +26,11 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, onEdit, 
   const formattedAmount = formatCurrency(transaction.amount);
   const formattedDate = new Date(transaction.date).toLocaleDateString(locale);
   const categoryName = allCategoriesMap[transaction.category]?.name || transaction.category;
+  const installmentLabel = transaction.installmentCount && transaction.installmentIndex
+    ? t('installment_label')
+      .replace('{current}', String(transaction.installmentIndex))
+      .replace('{total}', String(transaction.installmentCount))
+    : null;
 
   const baseClasses = "group flex items-center space-x-4 transition-all";
   const standaloneClasses = "rounded-2xl border border-white/10 bg-slate-800/70 p-4 hover:border-[var(--app-primary)] hover:bg-slate-800";
@@ -38,7 +43,14 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, onEdit, 
       </div>
       <div className="flex-1">
         <p className="font-semibold text-slate-200">{transaction.description}</p>
-        <p className="text-sm text-slate-400">{isGrouped ? formattedDate : `${categoryName} - ${formattedDate}`}</p>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+          <span>{isGrouped ? `${categoryName} - ${formattedDate}` : `${categoryName} - ${formattedDate}`}</span>
+          {installmentLabel ? (
+            <span className="rounded-full border border-white/10 bg-slate-950/50 px-2 py-0.5 text-xs text-slate-300">
+              {installmentLabel}
+            </span>
+          ) : null}
+        </div>
       </div>
       <div className="text-right">
         <p className={`font-bold text-lg ${amountColor}`}>{isIncome ? `+ ${formattedAmount}` : `- ${formattedAmount}`}</p>

@@ -3,8 +3,37 @@ import { and, desc, eq, gte, like, lte } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { transactions } from '../db/schema.js';
 import { getAuthenticatedUser } from '../lib/auth.js';
-import { createId, nowIso } from '../lib/utils.js';
+import { addMonthsToIsoDate, createId, nowIso } from '../lib/utils.js';
 import { transactionFiltersSchema, transactionSchema } from '../lib/validators.js';
+
+function buildPresetRange(preset: 'current_month' | 'previous_month' | 'next_30_days' | 'overdue') {
+  const now = new Date();
+  const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+  switch (preset) {
+    case 'current_month': {
+      const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+      const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999)).toISOString();
+      return { from, to };
+    }
+    case 'previous_month': {
+      const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString();
+      const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59, 999)).toISOString();
+      return { from, to };
+    }
+    case 'next_30_days': {
+      const from = startOfToday.toISOString();
+      const to = new Date(startOfToday.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      return { from, to };
+    }
+    case 'overdue': {
+      return {
+        from: undefined,
+        to: startOfToday.toISOString(),
+      };
+    }
+  }
+}
 
 export async function transactionRoutes(app: FastifyInstance) {
   app.get('/transactions', async (request, reply) => {
@@ -35,11 +64,28 @@ export async function transactionRoutes(app: FastifyInstance) {
     if (filters.data.status === 'unpaid') {
       conditions.push(eq(transactions.isPaid, false));
     }
-    if (filters.data.from) {
-      conditions.push(gte(transactions.transactionDate, filters.data.from));
+    const presetRange = filters.data.preset ? buildPresetRange(filters.data.preset) : null;
+    const from = filters.data.from ?? presetRange?.from;
+    const to = filters.data.to ?? presetRange?.to;
+
+    if (filters.data.preset === 'next_30_days' || filters.data.preset === 'overdue') {
+      conditions.push(eq(transactions.type, 'expense'));
+      if (from) {
+        conditions.push(gte(transactions.dueDate, from));
+      }
+      if (to) {
+        conditions.push(lte(transactions.dueDate, to));
+      }
+    } else {
+      if (from) {
+        conditions.push(gte(transactions.transactionDate, from));
+      }
+      if (to) {
+        conditions.push(lte(transactions.transactionDate, to));
+      }
     }
-    if (filters.data.to) {
-      conditions.push(lte(transactions.transactionDate, filters.data.to));
+    if (filters.data.preset === 'overdue') {
+      conditions.push(eq(transactions.isPaid, false));
     }
 
     const rows = await db.query.transactions.findMany({
@@ -55,6 +101,10 @@ export async function transactionRoutes(app: FastifyInstance) {
         date: row.transactionDate,
         type: row.type,
         category: row.categoryKey,
+        scheduleType: row.scheduleType as 'once' | 'recurring' | 'installment',
+        seriesId: row.seriesId,
+        installmentIndex: row.installmentIndex,
+        installmentCount: row.installmentCount,
         isRecurring: row.isRecurring,
         dueDate: row.dueDate,
         isPaid: row.isPaid,
@@ -75,29 +125,59 @@ export async function transactionRoutes(app: FastifyInstance) {
     }
 
     const timestamp = nowIso();
-    const transactionId = createId('txn');
+    const scheduleType = parsed.data.scheduleType;
+    const installmentCount = scheduleType === 'installment' ? parsed.data.installmentCount : 1;
+    const seriesId = installmentCount > 1 ? createId('series') : null;
+    const createdTransactions = [];
 
-    await db.insert(transactions).values({
-      id: transactionId,
-      userId: user.id,
-      description: parsed.data.description,
-      amount: parsed.data.amount,
-      type: parsed.data.type,
-      categoryKey: parsed.data.category,
-      transactionDate: parsed.data.date,
-      isRecurring: parsed.data.isRecurring,
-      dueDate: parsed.data.dueDate ?? null,
-      isPaid: parsed.data.isPaid,
-      notes: parsed.data.notes ?? null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
+    for (let index = 0; index < installmentCount; index += 1) {
+      const transactionId = createId('txn');
+      const nextDate = installmentCount > 1 ? addMonthsToIsoDate(parsed.data.date, index) : parsed.data.date;
+      const nextDueDate = parsed.data.dueDate
+        ? installmentCount > 1 ? addMonthsToIsoDate(parsed.data.dueDate, index) : parsed.data.dueDate
+        : null;
+
+      await db.insert(transactions).values({
+        id: transactionId,
+        userId: user.id,
+        description: installmentCount > 1 ? `${parsed.data.description} (${index + 1}/${installmentCount})` : parsed.data.description,
+        amount: parsed.data.amount,
+        type: parsed.data.type,
+        categoryKey: parsed.data.category,
+        transactionDate: nextDate,
+        scheduleType,
+        seriesId,
+        installmentIndex: installmentCount > 1 ? index + 1 : null,
+        installmentCount: installmentCount > 1 ? installmentCount : null,
+        isRecurring: parsed.data.isRecurring || scheduleType === 'recurring',
+        dueDate: nextDueDate,
+        isPaid: parsed.data.isPaid,
+        notes: parsed.data.notes ?? null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+
+      createdTransactions.push({
+        id: transactionId,
+        description: installmentCount > 1 ? `${parsed.data.description} (${index + 1}/${installmentCount})` : parsed.data.description,
+        amount: parsed.data.amount,
+        date: nextDate,
+        type: parsed.data.type,
+        category: parsed.data.category,
+        scheduleType,
+        seriesId,
+        installmentIndex: installmentCount > 1 ? index + 1 : null,
+        installmentCount: installmentCount > 1 ? installmentCount : null,
+        isRecurring: parsed.data.isRecurring || scheduleType === 'recurring',
+        dueDate: nextDueDate ?? undefined,
+        isPaid: parsed.data.isPaid,
+        notes: parsed.data.notes ?? null,
+      });
+    }
 
     return reply.status(201).send({
-      transaction: {
-        id: transactionId,
-        ...parsed.data,
-      },
+      transaction: createdTransactions[0],
+      transactions: createdTransactions,
     });
   });
 
@@ -128,6 +208,10 @@ export async function transactionRoutes(app: FastifyInstance) {
         type: parsed.data.type,
         categoryKey: parsed.data.category,
         transactionDate: parsed.data.date,
+        scheduleType: parsed.data.scheduleType,
+        seriesId: existing.seriesId,
+        installmentIndex: existing.installmentIndex,
+        installmentCount: existing.installmentCount,
         isRecurring: parsed.data.isRecurring,
         dueDate: parsed.data.dueDate ?? null,
         isPaid: parsed.data.isPaid,
@@ -140,6 +224,9 @@ export async function transactionRoutes(app: FastifyInstance) {
       transaction: {
         id: existing.id,
         ...parsed.data,
+        seriesId: existing.seriesId,
+        installmentIndex: existing.installmentIndex,
+        installmentCount: existing.installmentCount,
       },
     });
   });
@@ -189,6 +276,10 @@ export async function transactionRoutes(app: FastifyInstance) {
         date: transaction.transactionDate,
         type: transaction.type,
         category: transaction.categoryKey,
+        scheduleType: transaction.scheduleType as 'once' | 'recurring' | 'installment',
+        seriesId: transaction.seriesId,
+        installmentIndex: transaction.installmentIndex,
+        installmentCount: transaction.installmentCount,
         isRecurring: transaction.isRecurring,
         dueDate: transaction.dueDate,
         isPaid: body.isPaid,

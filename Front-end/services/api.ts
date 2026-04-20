@@ -1,4 +1,4 @@
-import { AppSettings, BrandSettings, CustomCategory, ExportPayload, Transaction, TransactionFilters, User } from '../types';
+import { AppSettings, BrandSettings, CustomCategory, ExportPayload, InviteInfo, Transaction, TransactionFilters, User } from '../types';
 import { buildTransactionQuery } from '../lib/transactions';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:4000';
@@ -30,15 +30,15 @@ export async function getCurrentUser(): Promise<User> {
   return response.user;
 }
 
-export async function loginUser(data: { email: string; password: string }) {
+export async function loginUser(data: { email: string; password: string; rememberMe?: boolean }) {
   return request<{ user: User }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify(data),
   });
 }
 
-export async function registerUser(data: { name: string; email: string; password: string }) {
-  return request<{ user: User }>('/auth/register', {
+export async function registerWithInvite(data: { name: string; email: string; password: string; inviteCode: string }) {
+  return request<{ user: User }>('/auth/register-with-invite', {
     method: 'POST',
     body: JSON.stringify(data),
   });
@@ -60,13 +60,15 @@ export async function saveTransaction(transaction: Omit<Transaction, 'id'> & { i
     date: transaction.date,
     type: transaction.type,
     category: transaction.category,
+    scheduleType: transaction.scheduleType ?? 'once',
+    installmentCount: transaction.installmentCount ?? 1,
     isRecurring: !!transaction.isRecurring,
     dueDate: transaction.dueDate ?? null,
     isPaid: transaction.isPaid ?? false,
     notes: transaction.notes ?? null,
   };
 
-  const response = await request<{ transaction: Transaction }>(
+  const response = await request<{ transaction: Transaction; transactions?: Transaction[] }>(
     transaction.id ? `/transactions/${transaction.id}` : '/transactions',
     {
       method: transaction.id ? 'PUT' : 'POST',
@@ -74,7 +76,33 @@ export async function saveTransaction(transaction: Omit<Transaction, 'id'> & { i
     }
   );
 
-  return response.transaction;
+  return response.transactions?.[0] ?? response.transaction;
+}
+
+export async function saveTransactionBatch(transaction: Omit<Transaction, 'id'> & { id?: string }): Promise<Transaction[]> {
+  const payload = {
+    description: transaction.description,
+    amount: transaction.amount,
+    date: transaction.date,
+    type: transaction.type,
+    category: transaction.category,
+    scheduleType: transaction.scheduleType ?? 'once',
+    installmentCount: transaction.installmentCount ?? 1,
+    isRecurring: !!transaction.isRecurring,
+    dueDate: transaction.dueDate ?? null,
+    isPaid: transaction.isPaid ?? false,
+    notes: transaction.notes ?? null,
+  };
+
+  const response = await request<{ transaction: Transaction; transactions?: Transaction[] }>(
+    transaction.id ? `/transactions/${transaction.id}` : '/transactions',
+    {
+      method: transaction.id ? 'PUT' : 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+  return response.transactions ?? [response.transaction];
 }
 
 export async function deleteTransaction(id: string) {
@@ -133,4 +161,12 @@ export async function importData(payload: Pick<ExportPayload, 'transactions' | '
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export async function createInvite(expiresInDays?: number): Promise<InviteInfo> {
+  const response = await request<{ invite: InviteInfo }>('/auth/invites', {
+    method: 'POST',
+    body: JSON.stringify(expiresInDays ? { expiresInDays } : {}),
+  });
+  return response.invite;
 }

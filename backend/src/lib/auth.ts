@@ -6,23 +6,26 @@ import { addDays, createId, createSessionToken, nowIso, sha256 } from './utils.j
 import { sessionCookieSameSite, sessionCookieSecure } from './env.js';
 
 const SESSION_COOKIE = 'tc_session';
+const REMEMBER_ME_SESSION_DAYS = 14;
+const SHORT_SESSION_DAYS = 1;
 
 export async function purgeExpiredSessions() {
   await db.delete(sessions).where(lte(sessions.expiresAt, nowIso()));
 }
 
-export async function createUserSession(reply: FastifyReply, userId: string) {
+export async function createUserSession(reply: FastifyReply, userId: string, rememberMe = true) {
   await purgeExpiredSessions();
 
   const token = createSessionToken();
   const tokenHash = sha256(token);
+  const sessionDays = rememberMe ? REMEMBER_ME_SESSION_DAYS : SHORT_SESSION_DAYS;
 
   await db.insert(sessions).values({
     id: createId('session'),
     userId,
     tokenHash,
     createdAt: nowIso(),
-    expiresAt: addDays(14),
+    expiresAt: addDays(sessionDays),
   });
 
   reply.setCookie(SESSION_COOKIE, token, {
@@ -30,7 +33,7 @@ export async function createUserSession(reply: FastifyReply, userId: string) {
     sameSite: sessionCookieSameSite,
     path: '/',
     secure: sessionCookieSecure,
-    maxAge: 14 * 24 * 60 * 60,
+    ...(rememberMe ? { maxAge: REMEMBER_ME_SESSION_DAYS * 24 * 60 * 60 } : {}),
   });
 }
 

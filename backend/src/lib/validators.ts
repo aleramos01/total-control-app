@@ -11,6 +11,18 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: z.string().trim().email().max(120),
   password: z.string().min(8).max(128),
+  rememberMe: z.boolean().optional().default(true),
+});
+
+export const inviteRegisterSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  email: z.string().trim().email().max(120),
+  password: z.string().min(8).max(128),
+  inviteCode: z.string().trim().min(6).max(32),
+});
+
+export const createInviteSchema = z.object({
+  expiresInDays: z.number().int().min(1).max(30).optional(),
 });
 
 export const transactionSchema = z.object({
@@ -19,10 +31,20 @@ export const transactionSchema = z.object({
   date: z.string().datetime(),
   type: z.enum(['income', 'expense']),
   category: z.string().trim().min(2).max(60),
+  scheduleType: z.enum(['once', 'recurring', 'installment']).optional().default('once'),
+  installmentCount: z.number().int().min(1).max(36).optional().default(1),
   isRecurring: z.boolean().optional().default(false),
   dueDate: z.string().datetime().optional().nullable(),
   isPaid: z.boolean().optional().default(false),
   notes: z.string().trim().max(240).optional().nullable(),
+}).superRefine((value, ctx) => {
+  if (value.scheduleType === 'installment' && value.installmentCount < 2) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['installmentCount'],
+      message: 'Installment count must be at least 2 for installment schedules',
+    });
+  }
 });
 
 export const categorySchema = z.object({
@@ -55,6 +77,7 @@ export const transactionFiltersSchema = z.object({
   type: z.enum(['income', 'expense']).optional(),
   category: z.string().trim().max(60).optional(),
   status: z.enum(['paid', 'unpaid']).optional(),
+  preset: z.enum(['current_month', 'previous_month', 'next_30_days', 'overdue']).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
 });

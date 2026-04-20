@@ -5,6 +5,7 @@ import ConfirmationDialog from './ConfirmationDialog';
 import { ExportIcon } from './icons/ExportIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import TransactionGroup from './TransactionGroup';
+import { formatMonthGroupLabel } from '../lib/transactions';
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -43,18 +44,24 @@ const TransactionList: React.FC<TransactionListProps> = ({
     [...transactions]
       .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
       .forEach(transaction => {
-        const group = groups.get(transaction.category) ?? [];
+        const groupKey = transaction.date.slice(0, 7);
+        const group = groups.get(groupKey) ?? [];
         group.push(transaction);
-        groups.set(transaction.category, group);
+        groups.set(groupKey, group);
       });
 
     return [...groups.entries()].sort((left, right) => {
-      const leftTotal = left[1].reduce((sum, transaction) => sum + transaction.amount, 0);
-      const rightTotal = right[1].reduce((sum, transaction) => sum + transaction.amount, 0);
-      return rightTotal - leftTotal;
+      return right[0].localeCompare(left[0]);
     });
   }, [transactions]);
   const totalVisible = useMemo(() => transactions.reduce((sum, transaction) => sum + transaction.amount, 0), [transactions]);
+
+  const periodPresets: Array<{ id: NonNullable<TransactionFilters['preset']>; label: string }> = [
+    { id: 'current_month', label: t('current_month') },
+    { id: 'previous_month', label: t('previous_month') },
+    { id: 'next_30_days', label: t('next_30_days') },
+    { id: 'overdue', label: t('overdue') },
+  ];
 
   return (
     <section className="rounded-[28px] border border-white/10 bg-slate-800/70 p-5 shadow-[0_18px_50px_rgba(15,23,42,0.28)] backdrop-blur">
@@ -100,6 +107,30 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
       {showFilters ? (
         <div className="mb-5 grid gap-3 rounded-[24px] border border-white/10 bg-slate-900/55 p-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="md:col-span-2 xl:col-span-5">
+            <p className="mb-2 text-sm font-medium text-slate-300">{t('period_presets')}</p>
+            <div className="flex flex-wrap gap-2">
+              {periodPresets.map(preset => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`rounded-full border px-3 py-2 text-sm font-semibold transition ${
+                    filters.preset === preset.id
+                      ? 'border-[var(--app-primary)] bg-[var(--app-primary)]/15 text-slate-50'
+                      : 'border-white/10 bg-slate-950/50 text-slate-400'
+                  }`}
+                  onClick={() => onFiltersChange(current => ({
+                    ...current,
+                    preset: current.preset === preset.id ? '' : preset.id,
+                    from: undefined,
+                    to: undefined,
+                  }))}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <input
             value={filters.q ?? ''}
             onChange={event => onFiltersChange(current => ({ ...current, q: event.target.value || undefined }))}
@@ -122,7 +153,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
             <option value="paid">{t('paid')}</option>
             <option value="unpaid">{t('unpaid')}</option>
           </select>
-          <button type="button" className="button-secondary justify-center md:col-span-2 xl:col-span-5" onClick={() => onFiltersChange({})}>
+          <button type="button" className="button-secondary justify-center md:col-span-2 xl:col-span-5" onClick={() => onFiltersChange({ preset: 'current_month' })}>
             {t('clear_filters')}
           </button>
         </div>
@@ -134,10 +165,10 @@ const TransactionList: React.FC<TransactionListProps> = ({
         </div>
       ) : (
         <div className="space-y-3">
-          {groupedTransactions.map(([categoryKey, grouped]) => (
+          {groupedTransactions.map(([monthKey, grouped]) => (
             <TransactionGroup
-              key={categoryKey}
-              categoryKey={categoryKey}
+              key={monthKey}
+              title={formatMonthGroupLabel(monthKey, locale)}
               transactions={grouped}
               onEdit={onEdit}
               onDelete={(id) => {

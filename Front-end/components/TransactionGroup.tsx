@@ -5,14 +5,14 @@ import { useLanguage } from '../LanguageContext';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 
 interface TransactionGroupProps {
-  categoryKey: string;
+  title: string;
   transactions: Transaction[];
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   allCategoriesMap: { [key: string]: { name: string; color: string } };
 }
 
-const TransactionGroup: React.FC<TransactionGroupProps> = ({ categoryKey, transactions, onEdit, onDelete, allCategoriesMap }) => {
+const TransactionGroup: React.FC<TransactionGroupProps> = ({ title, transactions, onEdit, onDelete, allCategoriesMap }) => {
   const [isOpen, setIsOpen] = useState(false);
   const { t, formatCurrency } = useLanguage();
 
@@ -20,11 +20,14 @@ const TransactionGroup: React.FC<TransactionGroupProps> = ({ categoryKey, transa
     return null;
   }
 
-  const { name, color } = allCategoriesMap[categoryKey] || { name: categoryKey, color: '#6B7280' };
-  const totalAmount = transactions.reduce((sum, tx) => sum + tx.amount, 0);
-  const transactionType = transactions[0].type;
-  const isIncome = transactionType === TransactionType.INCOME;
-  const amountColor = isIncome ? 'text-green-400' : 'text-red-400';
+  const totalIncome = transactions
+    .filter(tx => tx.type === TransactionType.INCOME)
+    .reduce((sum, tx) => sum + tx.amount, 0);
+  const totalExpense = transactions
+    .filter(tx => tx.type === TransactionType.EXPENSE)
+    .reduce((sum, tx) => sum + tx.amount, 0);
+  const balance = totalIncome - totalExpense;
+  const amountColor = balance >= 0 ? 'text-cyan-300' : 'text-amber-300';
 
   const transactionCountText = transactions.length === 1 
     ? t('transaction_count_one').replace('{count}', '1')
@@ -38,15 +41,15 @@ const TransactionGroup: React.FC<TransactionGroupProps> = ({ categoryKey, transa
         aria-expanded={isOpen}
       >
         <div className="flex items-center gap-3">
-          <div className="h-10 w-2 rounded" style={{ backgroundColor: color }}></div>
+          <div className="h-10 w-2 rounded bg-[var(--app-primary)]"></div>
           <div>
-            <p className="text-lg font-bold text-slate-100">{name}</p>
+            <p className="text-lg font-bold text-slate-100">{title}</p>
             <p className="text-sm text-slate-400">{transactionCountText}</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <p className={`font-bold text-lg ${amountColor}`}>
-            {isIncome ? `+ ${formatCurrency(totalAmount)}` : `- ${formatCurrency(totalAmount)}`}
+            {formatCurrency(balance)}
           </p>
           <ChevronDownIcon className={`w-6 h-6 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
         </div>

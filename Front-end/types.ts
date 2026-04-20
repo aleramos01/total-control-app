@@ -12,6 +12,12 @@ export interface User {
   role: 'admin' | 'user';
 }
 
+export interface InviteInfo {
+  code: string;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
 export interface CustomCategory {
   id: string;
   key: string;
@@ -45,6 +51,10 @@ export interface Transaction {
   date: string;
   type: TransactionType;
   category: string;
+  scheduleType?: 'once' | 'recurring' | 'installment';
+  seriesId?: string | null;
+  installmentIndex?: number | null;
+  installmentCount?: number | null;
   isRecurring?: boolean;
   dueDate?: string;
   isPaid?: boolean;
@@ -56,6 +66,7 @@ export interface TransactionFilters {
   type?: TransactionType | '';
   category?: string;
   status?: 'paid' | 'unpaid' | '';
+  preset?: 'current_month' | 'previous_month' | 'next_30_days' | 'overdue' | '';
   from?: string;
   to?: string;
 }
