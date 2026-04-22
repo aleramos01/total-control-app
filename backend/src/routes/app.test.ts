@@ -8,6 +8,12 @@ process.env.APP_BASE_URL ??= 'http://127.0.0.1:3000';
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL ??= 'postgresql://postgres:postgres@127.0.0.1:5432/total_control_test';
 
+const originalPrimaryAdminPassword = process.env.PRIMARY_ADMIN_PASSWORD;
+const originalPrimaryAdminName = process.env.PRIMARY_ADMIN_NAME;
+
+delete process.env.PRIMARY_ADMIN_PASSWORD;
+delete process.env.PRIMARY_ADMIN_NAME;
+
 const [{ buildApp }, { closeDb, db }, { ensureDatabase, ensurePrimaryAdminAccount, ensurePrimaryAdminRole }, { clearRateLimitStore }, { appSettings, brandSettings, customCategories, invites, sessions, transactions, users }] = await Promise.all([
   import('../app.js'),
   import('../db/client.js'),
@@ -17,10 +23,24 @@ const [{ buildApp }, { closeDb, db }, { ensureDatabase, ensurePrimaryAdminAccoun
 ]);
 
 after(async () => {
+  if (originalPrimaryAdminPassword) {
+    process.env.PRIMARY_ADMIN_PASSWORD = originalPrimaryAdminPassword;
+  } else {
+    delete process.env.PRIMARY_ADMIN_PASSWORD;
+  }
+
+  if (originalPrimaryAdminName) {
+    process.env.PRIMARY_ADMIN_NAME = originalPrimaryAdminName;
+  } else {
+    delete process.env.PRIMARY_ADMIN_NAME;
+  }
+
   await closeDb();
 });
 
 beforeEach(async () => {
+  delete process.env.PRIMARY_ADMIN_PASSWORD;
+  delete process.env.PRIMARY_ADMIN_NAME;
   clearRateLimitStore();
   await ensureDatabase();
   await db.delete(invites);
