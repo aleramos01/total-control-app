@@ -13,10 +13,11 @@ import * as api from './services/api';
 import Spinner from './components/Spinner';
 import AuthPage from './components/AuthPage';
 import { useAuth } from './hooks/useAuth';
-import { BrandSettings, CustomCategory, ExportPayload, InviteInfo, Transaction, TransactionFilters, TransactionType } from './types';
+import { AppSettings, BrandSettings, CustomCategory, ExportPayload, InviteInfo, Transaction, TransactionFilters, TransactionType } from './types';
 import UpcomingBills from './components/UpcomingBills';
 import BrandSettingsModal from './components/BrandSettingsModal';
 import InviteManagementModal from './components/InviteManagementModal';
+import AppSettingsModal from './components/AppSettingsModal';
 import { buildTransactionsCsv } from './lib/transactions';
 import ExpenseChart from './components/ExpenseChart';
 import { BarChartIcon } from './components/icons/BarChartIcon';
@@ -47,7 +48,7 @@ type MobileTab = 'summary' | 'transactions' | 'account';
 const App: React.FC = () => {
   const { t, locale } = useLanguage();
   const { showNotification } = useNotification();
-  const { settings: appSettings } = useAppSettings();
+  const { settings: appSettings, refreshSettings } = useAppSettings();
   const { user, isAuthenticated, logout } = useAuth();
 
   const [brandSettings, setBrandSettings] = useState<BrandSettings>(emptyBrandSettings);
@@ -61,6 +62,7 @@ const App: React.FC = () => {
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isAppSettingsModalOpen, setIsAppSettingsModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [activeTab, setActiveTab] = useState<MobileTab>('summary');
   const [latestInvite, setLatestInvite] = useState<InviteInfo | null>(null);
@@ -232,6 +234,18 @@ const App: React.FC = () => {
       showNotification(message, 'error');
     }
   }, [showNotification, t]);
+
+  const handleSaveAppSettings = useCallback(async (settings: AppSettings) => {
+    try {
+      await api.updateAppSettings(settings);
+      await refreshSettings();
+      showNotification(t('settings_saved_success'), 'success');
+      setIsAppSettingsModalOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save app settings';
+      showNotification(message, 'error');
+    }
+  }, [refreshSettings, showNotification, t]);
 
   const handleGenerateInvite = useCallback(async (expiresInDays: number) => {
     try {
@@ -422,6 +436,11 @@ const App: React.FC = () => {
                         {t('categories')}
                       </button>
                       {user.role === 'admin' ? (
+                        <button type="button" className="button-secondary justify-center" onClick={() => setIsAppSettingsModalOpen(true)}>
+                          {t('app_settings')}
+                        </button>
+                      ) : null}
+                      {user.role === 'admin' ? (
                         <button type="button" className="button-secondary justify-center" onClick={() => setIsInviteModalOpen(true)}>
                           {t('invite_management')}
                         </button>
@@ -531,6 +550,15 @@ const App: React.FC = () => {
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
       />
+
+      {user.role === 'admin' ? (
+        <AppSettingsModal
+          isOpen={isAppSettingsModalOpen}
+          onClose={() => setIsAppSettingsModalOpen(false)}
+          settings={appSettings}
+          onSave={handleSaveAppSettings}
+        />
+      ) : null}
 
       {user.role === 'admin' ? (
         <BrandSettingsModal

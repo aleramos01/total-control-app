@@ -327,6 +327,35 @@ test('non-admin users cannot update global settings', async () => {
   }
 });
 
+test('admin app settings update rejects invalid payloads', async () => {
+  const app = await buildApp();
+
+  try {
+    const admin = await registerAndAuthenticate(app, {
+      name: 'Admin User',
+      email: 'admin@example.com',
+      password: 'super-secret-password',
+    });
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/settings/app',
+      headers: { cookie: admin.cookie },
+      payload: {
+        currency: 'USD',
+        locale: 'en-US',
+        timezone: 'America/New_York',
+        billingDayDefault: 0,
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().message, 'Invalid app settings payload');
+  } finally {
+    await app.close();
+  }
+});
+
 test('invite code creates a regular user exactly once and expired invite is rejected', async () => {
   const app = await buildApp();
 

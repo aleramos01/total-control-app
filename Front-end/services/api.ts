@@ -195,6 +195,14 @@ export async function fetchAppSettings(): Promise<AppSettings> {
   return response.settings;
 }
 
+export async function updateAppSettings(settings: AppSettings): Promise<AppSettings> {
+  const response = await request('/settings/app', parseAppSettingsResponse, {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  });
+  return response.settings;
+}
+
 export async function exportData(): Promise<ExportPayload> {
   return request('/export/json', parseExportPayload);
 }
