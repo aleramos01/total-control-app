@@ -6,7 +6,7 @@ process.env.SESSION_SECRET ??= 'test-session-secret';
 process.env.CORS_ORIGIN ??= 'http://127.0.0.1:3000';
 process.env.APP_BASE_URL ??= 'http://127.0.0.1:3000';
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = 'pglite://total-control-tests';
+process.env.DATABASE_URL ??= 'postgresql://postgres:postgres@127.0.0.1:5432/total_control_test';
 
 const [{ buildApp }, { closeDb, db }, { ensureDatabase, ensurePrimaryAdminAccount, ensurePrimaryAdminRole }, { clearRateLimitStore }, { appSettings, brandSettings, customCategories, invites, sessions, transactions, users }] = await Promise.all([
   import('../app.js'),

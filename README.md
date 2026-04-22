@@ -9,14 +9,23 @@ This repository is the main product line of Total Control. It contains the curre
 
 ## Run locally
 
+### Banco de dados local com Docker
+
+1. `docker compose up -d`
+2. Aguarde o container `postgres` ficar healthy
+3. Banco principal: `postgresql://postgres:postgres@127.0.0.1:5432/total_control`
+4. Banco de testes: `postgresql://postgres:postgres@127.0.0.1:5432/total_control_test`
+
 ### Backend
 
 1. `cd backend`
 2. `cp .env.example .env`
 3. Defina `SESSION_SECRET`
-4. Defina `DATABASE_URL` para um Postgres válido
-4. `npm install`
-5. `npm run dev`
+4. Mantenha `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/total_control`
+5. `npm install`
+6. `npm run db:migrate`
+7. `npm run db:seed-demo`
+8. `npm run dev`
 
 ### Frontend
 
@@ -69,7 +78,8 @@ Deploy order:
 
 Notes:
 
-- The backend now uses Postgres and no longer depends on a local SQLite volume.
+- O backend usa apenas PostgreSQL.
+- O `docker compose` local também cria `total_control_test` para os testes automatizados do backend.
 - A free backend may cold start after inactivity; this is acceptable for the current low-cost target.
 
 ## Versioning
@@ -115,5 +125,5 @@ Minimum pre-deploy check:
 - Passwords hashed with `argon2`
 - Session cookie uses `httpOnly`, `SameSite=None` in production and `SameSite=Lax` outside production
 - No API secrets exposed in the frontend
-- Financial data persisted in SQLite, not browser storage
+- Financial data persisted in PostgreSQL
 - Recommended production runtime: Node `20+`

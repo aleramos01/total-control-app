@@ -1,3 +1,5 @@
+import 'dotenv/config';
+
 const requiredKeys = ['SESSION_SECRET', 'DATABASE_URL'] as const;
 
 for (const key of requiredKeys) {

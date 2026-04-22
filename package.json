@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f postgres",
     "dev:front": "npm --prefix Front-end run dev",
     "dev:back": "npm --prefix backend run dev",
     "build:front": "npm --prefix Front-end run build",

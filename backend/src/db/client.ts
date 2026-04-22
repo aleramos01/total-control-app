@@ -1,6 +1,4 @@
-import { PGlite } from '@electric-sql/pglite';
 import { drizzle as drizzleNodePg } from 'drizzle-orm/node-postgres';
-import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { Pool } from 'pg';
 import { env } from '../lib/env.js';
 import * as schema from './schema.js';
@@ -19,15 +17,6 @@ type QueryClient = {
 };
 
 function createRuntimeClient(connectionString: string) {
-  if (connectionString.startsWith('pglite://')) {
-    const pglite = new PGlite();
-    return {
-      driver: pglite,
-      queryClient: pglite as QueryClient,
-      db: drizzlePglite(pglite, { schema }),
-    };
-  }
-
   const requiresSsl = /sslmode=require/i.test(connectionString) || env.databaseSsl;
   const pool = new Pool({
     connectionString,
