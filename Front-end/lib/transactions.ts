@@ -199,8 +199,54 @@ export function extractDateInputValue(value?: string) {
   return value ? value.slice(0, 10) : '';
 }
 
+export function formatDatePtBr(value?: string) {
+  if (!value) {
+    return '';
+  }
+
+  const datePart = extractDateInputValue(value);
+  const [year, month, day] = datePart.split('-');
+  if (!year || !month || !day) {
+    return '';
+  }
+
+  return `${day}/${month}/${year}`;
+}
+
+function isValidDateParts(year: number, month: number, day: number) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+export function parseDatePtBr(value: string) {
+  const normalized = value.trim();
+  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) {
+    return null;
+  }
+
+  const [, dayText, monthText, yearText] = match;
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+
+  if (!isValidDateParts(year, month, day)) {
+    return null;
+  }
+
+  return `${yearText}-${monthText}-${dayText}`;
+}
+
 export function toStoredDate(value: string) {
   return new Date(`${value}T00:00:00.000Z`).toISOString();
+}
+
+export function toStoredDateEnd(value: string) {
+  return new Date(`${value}T23:59:59.999Z`).toISOString();
 }
 
 export function buildTransactionQuery(filters: TransactionFilters) {

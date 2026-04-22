@@ -81,6 +81,14 @@ export const transactionFiltersSchema = z.object({
   preset: z.enum(['current_month', 'previous_month', 'next_30_days', 'overdue']).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+}).superRefine((value, ctx) => {
+  if (value.from && value.to && new Date(value.from).getTime() > new Date(value.to).getTime()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['to'],
+      message: 'End date must be greater than or equal to start date',
+    });
+  }
 });
 
 export const transactionPaymentStatusSchema = z.object({

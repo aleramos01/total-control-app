@@ -5,7 +5,7 @@ import ConfirmationDialog from './ConfirmationDialog';
 import { ExportIcon } from './icons/ExportIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import TransactionGroup from './TransactionGroup';
-import { formatMonthGroupLabel } from '../lib/transactions';
+import { extractDateInputValue, formatMonthGroupLabel, toStoredDate, toStoredDateEnd } from '../lib/transactions';
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -35,6 +35,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const { t, formatCurrency, locale } = useLanguage();
   const [transactionToDelete, setTransactionToDelete] = React.useState<Transaction | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [draftFrom, setDraftFrom] = useState(extractDateInputValue(filters.from));
+  const [draftTo, setDraftTo] = useState(extractDateInputValue(filters.to));
   const importRef = useRef<HTMLInputElement>(null);
 
   const categories = useMemo(() => Object.entries(allCategoriesMap), [allCategoriesMap]);
@@ -62,6 +64,20 @@ const TransactionList: React.FC<TransactionListProps> = ({
     { id: 'next_30_days', label: t('next_30_days') },
     { id: 'overdue', label: t('overdue') },
   ];
+
+  const syncDraftDates = (nextFilters: TransactionFilters) => {
+    setDraftFrom(extractDateInputValue(nextFilters.from));
+    setDraftTo(extractDateInputValue(nextFilters.to));
+  };
+
+  const applyDateRange = () => {
+    onFiltersChange(current => ({
+      ...current,
+      from: draftFrom ? toStoredDate(draftFrom) : undefined,
+      to: draftTo ? toStoredDateEnd(draftTo) : undefined,
+      preset: draftFrom || draftTo ? '' : current.preset,
+    }));
+  };
 
   return (
     <section className="rounded-[28px] border border-white/10 bg-slate-800/70 p-5 shadow-[0_18px_50px_rgba(15,23,42,0.28)] backdrop-blur">
@@ -124,18 +140,44 @@ const TransactionList: React.FC<TransactionListProps> = ({
                     preset: current.preset === preset.id ? '' : preset.id,
                     from: undefined,
                     to: undefined,
-                  }))}
+                  })) || syncDraftDates({
+                    ...filters,
+                    preset: filters.preset === preset.id ? '' : preset.id,
+                    from: undefined,
+                    to: undefined,
+                  })}
                 >
                   {preset.label}
                 </button>
               ))}
             </div>
           </div>
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-slate-300">{t('from')}</span>
+            <input
+              type="date"
+              lang="pt-BR"
+              value={draftFrom}
+              onChange={event => setDraftFrom(event.target.value)}
+              className="input-base"
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-slate-300">{t('to')}</span>
+            <input
+              type="date"
+              lang="pt-BR"
+              value={draftTo}
+              onChange={event => setDraftTo(event.target.value)}
+              onBlur={applyDateRange}
+              className="input-base"
+            />
+          </label>
           <input
             value={filters.q ?? ''}
             onChange={event => onFiltersChange(current => ({ ...current, q: event.target.value || undefined }))}
             placeholder={t('search_placeholder')}
-            className="input-base xl:col-span-2"
+            className="input-base md:col-span-2 xl:col-span-3"
           />
           <select value={filters.type ?? ''} onChange={event => onFiltersChange(current => ({ ...current, type: (event.target.value || '') as TransactionFilters['type'] }))} className="input-base">
             <option value="">{t('type')}</option>
@@ -153,7 +195,10 @@ const TransactionList: React.FC<TransactionListProps> = ({
             <option value="paid">{t('paid')}</option>
             <option value="unpaid">{t('unpaid')}</option>
           </select>
-          <button type="button" className="button-secondary justify-center md:col-span-2 xl:col-span-5" onClick={() => onFiltersChange({ preset: 'current_month' })}>
+          <button type="button" className="button-secondary justify-center md:col-span-2 xl:col-span-5" onClick={() => {
+            syncDraftDates({ preset: 'current_month' });
+            onFiltersChange({ preset: 'current_month' });
+          }}>
             {t('clear_filters')}
           </button>
         </div>

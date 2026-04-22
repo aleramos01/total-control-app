@@ -624,6 +624,110 @@ test('transaction preset filters support current month and overdue views', async
   }
 });
 
+test('transaction date range filters support closed and open intervals', async () => {
+  const app = await buildApp();
+
+  try {
+    const user = await registerAndAuthenticate(app, {
+      name: 'Range User',
+      email: 'range@example.com',
+      password: 'super-secret-password',
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/transactions',
+      headers: { cookie: user.cookie },
+      payload: {
+        description: 'Janeiro',
+        amount: 100,
+        date: '2026-01-10T12:00:00.000Z',
+        type: 'expense',
+        category: 'food',
+        isPaid: true,
+      },
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/transactions',
+      headers: { cookie: user.cookie },
+      payload: {
+        description: 'Fevereiro',
+        amount: 200,
+        date: '2026-02-15T12:00:00.000Z',
+        type: 'expense',
+        category: 'food',
+        isPaid: true,
+      },
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/transactions',
+      headers: { cookie: user.cookie },
+      payload: {
+        description: 'Março',
+        amount: 300,
+        date: '2026-03-20T12:00:00.000Z',
+        type: 'expense',
+        category: 'food',
+        isPaid: true,
+      },
+    });
+
+    const closedRange = await app.inject({
+      method: 'GET',
+      url: '/transactions?from=2026-02-01T00:00:00.000Z&to=2026-02-28T23:59:59.999Z',
+      headers: { cookie: user.cookie },
+    });
+    const fromOnly = await app.inject({
+      method: 'GET',
+      url: '/transactions?from=2026-02-01T00:00:00.000Z',
+      headers: { cookie: user.cookie },
+    });
+    const toOnly = await app.inject({
+      method: 'GET',
+      url: '/transactions?to=2026-02-28T23:59:59.999Z',
+      headers: { cookie: user.cookie },
+    });
+
+    assert.equal(closedRange.statusCode, 200);
+    assert.deepEqual(closedRange.json().transactions.map((item: { description: string }) => item.description), ['Fevereiro']);
+
+    assert.equal(fromOnly.statusCode, 200);
+    assert.deepEqual(fromOnly.json().transactions.map((item: { description: string }) => item.description), ['Março', 'Fevereiro']);
+
+    assert.equal(toOnly.statusCode, 200);
+    assert.deepEqual(toOnly.json().transactions.map((item: { description: string }) => item.description), ['Fevereiro', 'Janeiro']);
+  } finally {
+    await app.close();
+  }
+});
+
+test('transaction date range rejects inverted intervals', async () => {
+  const app = await buildApp();
+
+  try {
+    const user = await registerAndAuthenticate(app, {
+      name: 'Invalid Range User',
+      email: 'invalid-range@example.com',
+      password: 'super-secret-password',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/transactions?from=2026-03-01T00:00:00.000Z&to=2026-02-01T23:59:59.999Z',
+      headers: { cookie: user.cookie },
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().message, 'Invalid filters');
+  } finally {
+    await app.close();
+  }
+});
+
 test('search filters treat sql injection strings as plain text', async () => {
   const app = await buildApp();
 

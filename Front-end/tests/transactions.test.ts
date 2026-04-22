@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTransactionQuery, buildTransactionsCsv, getUpcomingBills, parseStoredDate, suggestCategoryFromDescription } from '../lib/transactions.js';
+import { buildTransactionQuery, buildTransactionsCsv, formatDatePtBr, getUpcomingBills, parseDatePtBr, parseStoredDate, suggestCategoryFromDescription, toStoredDate, toStoredDateEnd } from '../lib/transactions.js';
 import { TransactionType, type Transaction } from '../types.js';
 
 test('buildTransactionQuery only serializes filled filters', () => {
@@ -8,8 +8,8 @@ test('buildTransactionQuery only serializes filled filters', () => {
     q: 'mercado',
     type: TransactionType.EXPENSE,
     preset: 'current_month',
-    from: '2026-01-01',
-    to: '2026-01-31',
+    from: toStoredDate('2026-01-01'),
+    to: toStoredDateEnd('2026-01-31'),
   });
 
   assert.match(query, /^\?/);
@@ -17,7 +17,23 @@ test('buildTransactionQuery only serializes filled filters', () => {
   assert.match(query, /type=expense/);
   assert.match(query, /preset=current_month/);
   assert.match(query, /from=2026-01-01T00%3A00%3A00.000Z/);
-  assert.match(query, /to=2026-01-31T00%3A00%3A00.000Z/);
+  assert.match(query, /to=2026-01-31T23%3A59%3A59.999Z/);
+});
+
+test('buildTransactionQuery preserves manual date ranges together with other filters', () => {
+  const query = buildTransactionQuery({
+    q: 'assinatura',
+    category: 'subscriptions',
+    status: 'unpaid',
+    from: toStoredDate('2026-02-01'),
+    to: toStoredDateEnd('2026-02-28'),
+  });
+
+  assert.match(query, /q=assinatura/);
+  assert.match(query, /category=subscriptions/);
+  assert.match(query, /status=unpaid/);
+  assert.match(query, /from=2026-02-01T00%3A00%3A00.000Z/);
+  assert.match(query, /to=2026-02-28T23%3A59%3A59.999Z/);
 });
 
 test('buildTransactionsCsv escapes quotes and resolves category labels', () => {
@@ -98,6 +114,20 @@ test('parseStoredDate preserves the day portion of stored ISO strings', () => {
   assert.equal(parsed.getFullYear(), 2026);
   assert.equal(parsed.getMonth(), 0);
   assert.equal(parsed.getDate(), 8);
+});
+
+test('formatDatePtBr converts stored ISO dates to Brazilian format', () => {
+  assert.equal(formatDatePtBr('2026-01-08T00:00:00.000Z'), '08/01/2026');
+});
+
+test('parseDatePtBr converts Brazilian format to storage date input format', () => {
+  assert.equal(parseDatePtBr('08/01/2026'), '2026-01-08');
+});
+
+test('parseDatePtBr rejects invalid Brazilian dates', () => {
+  assert.equal(parseDatePtBr('2026'), null);
+  assert.equal(parseDatePtBr('31/02/2026'), null);
+  assert.equal(parseDatePtBr('8/1/2026'), null);
 });
 
 test('suggestCategoryFromDescription infers an expense category from the description', () => {

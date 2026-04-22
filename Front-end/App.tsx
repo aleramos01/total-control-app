@@ -476,14 +476,14 @@ const App: React.FC = () => {
           setEditingTransaction(null);
           setIsModalOpen(true);
         }}
-        className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--app-primary)] text-white shadow-[0_18px_45px_rgba(99,102,241,0.4)] transition hover:scale-105 sm:bottom-8"
+        className="fixed bottom-8 right-5 z-40 hidden h-14 w-14 items-center justify-center rounded-full bg-[var(--app-primary)] text-white shadow-[0_18px_45px_rgba(99,102,241,0.4)] transition hover:scale-105 sm:flex"
         aria-label={t('create_transaction')}
       >
         <PlusIcon className="h-7 w-7" />
       </button>
 
       <nav className="fixed inset-x-4 bottom-4 z-40 rounded-full border border-white/10 bg-slate-900/92 p-1 shadow-2xl backdrop-blur sm:inset-x-auto sm:left-1/2 sm:w-[420px] sm:-translate-x-1/2">
-        <div className="grid grid-cols-3 gap-1">
+        <div className="grid grid-cols-4 gap-1 sm:grid-cols-3">
           {tabs.map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -497,6 +497,17 @@ const App: React.FC = () => {
               <span>{label}</span>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              setEditingTransaction(null);
+              setIsModalOpen(true);
+            }}
+            className="flex flex-col items-center justify-center gap-1 rounded-full px-3 py-3 text-xs font-semibold text-[var(--app-primary)] transition sm:hidden"
+          >
+            <PlusIcon className="h-5 w-5" />
+            <span>{t('create_transaction')}</span>
+          </button>
         </div>
       </nav>
 
