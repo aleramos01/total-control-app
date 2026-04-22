@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
-import { ensureSchema } from './db/init.js';
+import { ensureDatabase } from './db/init.js';
 import { env } from './lib/env.js';
 import { authRoutes } from './routes/auth.js';
 import { categoryRoutes } from './routes/categories.js';
@@ -11,7 +11,7 @@ import { ensureDefaultSettings, settingsRoutes } from './routes/settings.js';
 import { transactionRoutes } from './routes/transactions.js';
 
 export async function buildApp() {
-  ensureSchema();
+  await ensureDatabase();
   await ensureDefaultSettings();
 
   const app = Fastify({

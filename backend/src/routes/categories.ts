@@ -29,7 +29,7 @@ export async function categoryRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/categories', async (request, reply) => {
+  app.post<{ Body: unknown }>('/categories', async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return reply.status(401).send({ message: 'Unauthorized' });
@@ -69,13 +69,13 @@ export async function categoryRoutes(app: FastifyInstance) {
     });
   });
 
-  app.delete('/categories/:id', async (request, reply) => {
+  app.delete<{ Params: { id: string } }>('/categories/:id', async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return reply.status(401).send({ message: 'Unauthorized' });
     }
 
-    const categoryId = String((request.params as { id: string }).id);
+    const categoryId = request.params.id;
     const category = await db.query.customCategories.findFirst({
       where: and(eq(customCategories.id, categoryId), eq(customCategories.userId, user.id)),
     });
@@ -89,7 +89,7 @@ export async function categoryRoutes(app: FastifyInstance) {
       .from(transactions)
       .where(and(eq(transactions.userId, user.id), eq(transactions.categoryKey, category.key)));
 
-    if ((usage?.count ?? 0) > 0) {
+    if (Number(usage?.count ?? 0) > 0) {
       return reply.status(409).send({ message: 'Category is in use and cannot be deleted.' });
     }
 

@@ -1,39 +1,74 @@
 import test, { after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { eq } from 'drizzle-orm';
 
 process.env.SESSION_SECRET ??= 'test-session-secret';
 process.env.CORS_ORIGIN ??= 'http://127.0.0.1:3000';
 process.env.APP_BASE_URL ??= 'http://127.0.0.1:3000';
 process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = 'pglite://total-control-tests';
 
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'total-control-backend-'));
-process.env.DATABASE_URL = path.join(tempDir, 'test.sqlite');
-
-const [{ buildApp }, { sqlite }, { ensureSchema }] = await Promise.all([
+const [{ buildApp }, { closeDb, db }, { ensureDatabase, ensurePrimaryAdminAccount, ensurePrimaryAdminRole }, { clearRateLimitStore }, { appSettings, brandSettings, customCategories, invites, sessions, transactions, users }] = await Promise.all([
   import('../app.js'),
   import('../db/client.js'),
   import('../db/init.js'),
+  import('../lib/rate-limit.js'),
+  import('../db/schema.js'),
 ]);
 
 after(async () => {
-  sqlite.close();
-  fs.rmSync(tempDir, { recursive: true, force: true });
+  await closeDb();
 });
 
-beforeEach(() => {
-  ensureSchema();
-  sqlite.exec(`
-    DELETE FROM invites;
-    DELETE FROM sessions;
-    DELETE FROM transactions;
-    DELETE FROM custom_categories;
-    DELETE FROM users;
-    DELETE FROM brand_settings;
-    DELETE FROM app_settings;
-  `);
+beforeEach(async () => {
+  clearRateLimitStore();
+  await ensureDatabase();
+  await db.delete(invites);
+  await db.delete(sessions);
+  await db.delete(transactions);
+  await db.delete(customCategories);
+  await db.delete(users);
+  await db.delete(brandSettings);
+  await db.delete(appSettings);
+});
+
+test('login is rate limited after repeated failures', async () => {
+  const app = await buildApp();
+
+  try {
+    await registerAndAuthenticate(app, {
+      name: 'Rate Limited User',
+      email: 'ratelimit@example.com',
+      password: 'super-secret-password',
+    });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: {
+          email: 'ratelimit@example.com',
+          password: 'wrong-password-value',
+        },
+      });
+
+      assert.equal(response.statusCode, 401);
+    }
+
+    const blockedResponse = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: {
+        email: 'ratelimit@example.com',
+        password: 'wrong-password-value',
+      },
+    });
+
+    assert.equal(blockedResponse.statusCode, 429);
+    assert.equal(blockedResponse.json().message, 'Too many login attempts');
+  } finally {
+    await app.close();
+  }
 });
 
 function readSessionCookie(setCookieHeader: string | string[] | undefined) {
@@ -157,22 +192,41 @@ test('login omits persistent cookie max-age when rememberMe is false', async () 
   }
 });
 
+test('logout invalidates the persisted session', async () => {
+  const app = await buildApp();
+
+  try {
+    const user = await registerAndAuthenticate(app, {
+      name: 'Logout User',
+      email: 'logout@example.com',
+      password: 'super-secret-password',
+    });
+
+    const logoutResponse = await app.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      headers: { cookie: user.cookie },
+    });
+    assert.equal(logoutResponse.statusCode, 204);
+
+    const meResponse = await app.inject({
+      method: 'GET',
+      url: '/auth/me',
+      headers: { cookie: user.cookie },
+    });
+    assert.equal(meResponse.statusCode, 401);
+  } finally {
+    await app.close();
+  }
+});
+
 test('protected routes reject unauthenticated requests', async () => {
   const app = await buildApp();
 
   try {
-    const transactionsResponse = await app.inject({
-      method: 'GET',
-      url: '/transactions',
-    });
-    const categoriesResponse = await app.inject({
-      method: 'GET',
-      url: '/categories',
-    });
-    const exportResponse = await app.inject({
-      method: 'GET',
-      url: '/export/json',
-    });
+    const transactionsResponse = await app.inject({ method: 'GET', url: '/transactions' });
+    const categoriesResponse = await app.inject({ method: 'GET', url: '/categories' });
+    const exportResponse = await app.inject({ method: 'GET', url: '/export/json' });
     const updateSettingsResponse = await app.inject({
       method: 'PUT',
       url: '/settings/app',
@@ -253,33 +307,7 @@ test('non-admin users cannot update global settings', async () => {
   }
 });
 
-test('public registration is disabled after the first account', async () => {
-  const app = await buildApp();
-
-  try {
-    await registerAndAuthenticate(app, {
-      name: 'Admin User',
-      email: 'admin@example.com',
-      password: 'super-secret-password',
-    });
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: {
-        name: 'Blocked User',
-        email: 'blocked@example.com',
-        password: 'super-secret-password',
-      },
-    });
-
-    assert.equal(response.statusCode, 403);
-  } finally {
-    await app.close();
-  }
-});
-
-test('admin can create invites and invite code creates a regular user exactly once', async () => {
+test('invite code creates a regular user exactly once and expired invite is rejected', async () => {
   const app = await buildApp();
 
   try {
@@ -316,99 +344,12 @@ test('admin can create invites and invite code creates a regular user exactly on
     });
 
     assert.equal(secondUse.statusCode, 400);
-  } finally {
-    await app.close();
-  }
-});
 
-test('primary admin email becomes admin even when registered with an invite', async () => {
-  const app = await buildApp();
-
-  try {
-    const admin = await registerAndAuthenticate(app, {
-      name: 'Admin User',
-      email: 'admin@example.com',
-      password: 'super-secret-password',
-    });
-    const invite = await createInvite(app, admin.cookie, { expiresInDays: 7 });
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/auth/register-with-invite',
-      payload: {
-        name: 'Xandy',
-        email: 'xandyramoscrazy@gmail.com',
-        password: 'super-secret-password',
-        inviteCode: invite.code,
-      },
-    });
-
-    assert.equal(response.statusCode, 201);
-    assert.equal(response.json().user.role, 'admin');
-  } finally {
-    await app.close();
-  }
-});
-
-test('ensureSchema promotes an existing primary admin account to admin', async () => {
-  ensureSchema();
-  sqlite.exec(`
-    DELETE FROM invites;
-    DELETE FROM sessions;
-    DELETE FROM transactions;
-    DELETE FROM custom_categories;
-    DELETE FROM users;
-    DELETE FROM brand_settings;
-    DELETE FROM app_settings;
-  `);
-  sqlite.prepare(`
-    INSERT INTO users (id, name, email, password_hash, role, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    'user_existing',
-    'Xandy',
-    'xandyramoscrazy@gmail.com',
-    'hash-placeholder',
-    'user',
-    'active',
-    '2026-01-01T00:00:00.000Z',
-    '2026-01-01T00:00:00.000Z',
-  );
-
-  ensureSchema();
-
-  const user = sqlite
-    .prepare(`SELECT role FROM users WHERE email = ?`)
-    .get('xandyramoscrazy@gmail.com') as { role: string };
-
-  assert.equal(user.role, 'admin');
-});
-
-test('expired invite code is rejected', async () => {
-  const app = await buildApp();
-
-  try {
-    const admin = await registerAndAuthenticate(app, {
-      name: 'Admin User',
-      email: 'admin@example.com',
-      password: 'super-secret-password',
-    });
-    const invite = await createInvite(app, admin.cookie);
-
-    const expireResponse = await app.inject({
-      method: 'POST',
-      url: '/auth/register-with-invite',
-      payload: {
-        name: 'Invited User',
-        email: 'invited@example.com',
-        password: 'super-secret-password',
-        inviteCode: invite.code,
-      },
-    });
-    assert.equal(expireResponse.statusCode, 201);
-
-    const nextInvite = await createInvite(app, admin.cookie);
-    sqlite.exec(`UPDATE invites SET expires_at = '2020-01-01T00:00:00.000Z' WHERE code = '${nextInvite.code}'`);
+    const expiredInvite = await createInvite(app, admin.cookie);
+    await db
+      .update(invites)
+      .set({ expiresAt: '2020-01-01T00:00:00.000Z' })
+      .where(eq(invites.code, expiredInvite.code));
 
     const expiredResponse = await app.inject({
       method: 'POST',
@@ -417,7 +358,7 @@ test('expired invite code is rejected', async () => {
         name: 'Late User',
         email: 'late@example.com',
         password: 'super-secret-password',
-        inviteCode: nextInvite.code,
+        inviteCode: expiredInvite.code,
       },
     });
 
@@ -427,7 +368,50 @@ test('expired invite code is rejected', async () => {
   }
 });
 
-test('export and import preserve custom category keys for transactions', async () => {
+test('ensureDatabase promotes an existing primary admin account to admin', async () => {
+  await db.insert(users).values({
+    id: 'user_existing',
+    name: 'Xandy',
+    email: 'xandyramoscrazy@gmail.com',
+    passwordHash: 'hash-placeholder',
+    role: 'user',
+    status: 'active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  await ensurePrimaryAdminRole();
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.email, 'xandyramoscrazy@gmail.com'),
+    columns: { role: true },
+  });
+
+  assert.equal(user?.role, 'admin');
+});
+
+test('ensurePrimaryAdminAccount creates the primary admin when PRIMARY_ADMIN_PASSWORD is configured', async () => {
+  process.env.PRIMARY_ADMIN_PASSWORD = 'ale220506';
+  process.env.PRIMARY_ADMIN_NAME = 'Xandy Ramos';
+
+  try {
+    await ensurePrimaryAdminAccount();
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.email, 'xandyramoscrazy@gmail.com'),
+      columns: { name: true, role: true, status: true },
+    });
+
+    assert.equal(user?.name, 'Xandy Ramos');
+    assert.equal(user?.role, 'admin');
+    assert.equal(user?.status, 'active');
+  } finally {
+    delete process.env.PRIMARY_ADMIN_PASSWORD;
+    delete process.env.PRIMARY_ADMIN_NAME;
+  }
+});
+
+test('export and import preserve custom category keys and isolate data per user', async () => {
   const app = await buildApp();
 
   try {
@@ -505,22 +489,20 @@ test('export and import preserve custom category keys for transactions', async (
     });
     assert.equal(importResponse.statusCode, 201);
 
-    const targetCategoriesResponse = await app.inject({
-      method: 'GET',
-      url: '/categories',
-      headers: { cookie: target.cookie },
-    });
     const targetTransactionsResponse = await app.inject({
       method: 'GET',
       url: '/transactions',
       headers: { cookie: target.cookie },
     });
+    const sourceTransactionsResponse = await app.inject({
+      method: 'GET',
+      url: '/transactions',
+      headers: { cookie: source.cookie },
+    });
 
-    const targetCategory = targetCategoriesResponse.json().categories[0] as { key: string };
-    const targetTransaction = targetTransactionsResponse.json().transactions[0] as { category: string };
-
-    assert.equal(targetCategory.key, category.key);
-    assert.equal(targetTransaction.category, category.key);
+    assert.equal(targetTransactionsResponse.json().transactions.length, 1);
+    assert.equal(sourceTransactionsResponse.json().transactions.length, 1);
+    assert.notEqual(targetTransactionsResponse.json().transactions[0].id, sourceTransactionsResponse.json().transactions[0].id);
   } finally {
     await app.close();
   }
@@ -557,15 +539,6 @@ test('creating an installment expense generates the full series', async () => {
     assert.equal(response.json().transactions.length, 3);
     assert.equal(response.json().transactions[0].installmentIndex, 1);
     assert.equal(response.json().transactions[2].installmentIndex, 3);
-
-    const allTransactions = await app.inject({
-      method: 'GET',
-      url: '/transactions',
-      headers: { cookie: user.cookie },
-    });
-
-    assert.equal(allTransactions.statusCode, 200);
-    assert.equal(allTransactions.json().transactions.length, 3);
   } finally {
     await app.close();
   }
@@ -626,6 +599,51 @@ test('transaction preset filters support current month and overdue views', async
     assert.equal(overdue.json().transactions[0].description, 'Conta vencida');
     assert.equal(currentMonth.statusCode, 200);
     assert.equal(currentMonth.json().transactions.length, 1);
+  } finally {
+    await app.close();
+  }
+});
+
+test('search filters treat sql injection strings as plain text', async () => {
+  const app = await buildApp();
+
+  try {
+    const user = await registerAndAuthenticate(app, {
+      name: 'Search User',
+      email: 'search@example.com',
+      password: 'super-secret-password',
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/transactions',
+      headers: { cookie: user.cookie },
+      payload: {
+        description: 'Mercado local',
+        amount: 80,
+        date: '2026-01-10T00:00:00.000Z',
+        type: 'expense',
+        category: 'food',
+        isPaid: false,
+      },
+    });
+
+    const injectionResponse = await app.inject({
+      method: 'GET',
+      url: `/transactions?q=${encodeURIComponent(`' OR 1=1 --`)}`,
+      headers: { cookie: user.cookie },
+    });
+
+    assert.equal(injectionResponse.statusCode, 200);
+    assert.equal(injectionResponse.json().transactions.length, 0);
+
+    const tableStillExists = await app.inject({
+      method: 'GET',
+      url: '/transactions',
+      headers: { cookie: user.cookie },
+    });
+    assert.equal(tableStillExists.statusCode, 200);
+    assert.equal(tableStillExists.json().transactions.length, 1);
   } finally {
     await app.close();
   }

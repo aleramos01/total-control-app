@@ -3,8 +3,13 @@ import { and, desc, eq, gte, like, lte } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { transactions } from '../db/schema.js';
 import { getAuthenticatedUser } from '../lib/auth.js';
+import type { ScheduleType } from '../lib/contracts.js';
 import { addMonthsToIsoDate, createId, nowIso } from '../lib/utils.js';
-import { transactionFiltersSchema, transactionSchema } from '../lib/validators.js';
+import { transactionFiltersSchema, transactionPaymentStatusSchema, transactionSchema } from '../lib/validators.js';
+
+type TransactionIdParams = {
+  id: string;
+};
 
 function buildPresetRange(preset: 'current_month' | 'previous_month' | 'next_30_days' | 'overdue') {
   const now = new Date();
@@ -36,7 +41,7 @@ function buildPresetRange(preset: 'current_month' | 'previous_month' | 'next_30_
 }
 
 export async function transactionRoutes(app: FastifyInstance) {
-  app.get('/transactions', async (request, reply) => {
+  app.get<{ Querystring: unknown }>('/transactions', async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return reply.status(401).send({ message: 'Unauthorized' });
@@ -101,7 +106,7 @@ export async function transactionRoutes(app: FastifyInstance) {
         date: row.transactionDate,
         type: row.type,
         category: row.categoryKey,
-        scheduleType: row.scheduleType as 'once' | 'recurring' | 'installment',
+        scheduleType: row.scheduleType as ScheduleType,
         seriesId: row.seriesId,
         installmentIndex: row.installmentIndex,
         installmentCount: row.installmentCount,
@@ -113,7 +118,7 @@ export async function transactionRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/transactions', async (request, reply) => {
+  app.post<{ Body: unknown }>('/transactions', async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return reply.status(401).send({ message: 'Unauthorized' });
@@ -181,7 +186,7 @@ export async function transactionRoutes(app: FastifyInstance) {
     });
   });
 
-  app.put('/transactions/:id', async (request, reply) => {
+  app.put<{ Params: TransactionIdParams; Body: unknown }>('/transactions/:id', async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return reply.status(401).send({ message: 'Unauthorized' });
@@ -193,7 +198,7 @@ export async function transactionRoutes(app: FastifyInstance) {
     }
 
     const existing = await db.query.transactions.findFirst({
-      where: and(eq(transactions.id, String((request.params as { id: string }).id)), eq(transactions.userId, user.id)),
+      where: and(eq(transactions.id, request.params.id), eq(transactions.userId, user.id)),
     });
 
     if (!existing) {
@@ -231,7 +236,7 @@ export async function transactionRoutes(app: FastifyInstance) {
     });
   });
 
-  app.delete('/transactions/:id', async (request, reply) => {
+  app.delete<{ Params: TransactionIdParams }>('/transactions/:id', async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return reply.status(401).send({ message: 'Unauthorized' });
@@ -239,24 +244,24 @@ export async function transactionRoutes(app: FastifyInstance) {
 
     await db
       .delete(transactions)
-      .where(and(eq(transactions.id, String((request.params as { id: string }).id)), eq(transactions.userId, user.id)));
+      .where(and(eq(transactions.id, request.params.id), eq(transactions.userId, user.id)));
 
     return reply.status(204).send();
   });
 
-  app.patch('/transactions/:id/payment-status', async (request, reply) => {
+  app.patch<{ Params: TransactionIdParams; Body: unknown }>('/transactions/:id/payment-status', async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return reply.status(401).send({ message: 'Unauthorized' });
     }
 
-    const body = request.body as { isPaid?: boolean };
-    if (typeof body?.isPaid !== 'boolean') {
-      return reply.status(400).send({ message: 'isPaid must be a boolean' });
+    const parsed = transactionPaymentStatusSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ message: 'Invalid payment status payload', issues: parsed.error.flatten() });
     }
 
     const transaction = await db.query.transactions.findFirst({
-      where: and(eq(transactions.id, String((request.params as { id: string }).id)), eq(transactions.userId, user.id)),
+      where: and(eq(transactions.id, request.params.id), eq(transactions.userId, user.id)),
     });
 
     if (!transaction) {
@@ -265,7 +270,7 @@ export async function transactionRoutes(app: FastifyInstance) {
 
     await db
       .update(transactions)
-      .set({ isPaid: body.isPaid, updatedAt: nowIso() })
+      .set({ isPaid: parsed.data.isPaid, updatedAt: nowIso() })
       .where(and(eq(transactions.id, transaction.id), eq(transactions.userId, user.id)));
 
     return reply.send({
@@ -276,13 +281,13 @@ export async function transactionRoutes(app: FastifyInstance) {
         date: transaction.transactionDate,
         type: transaction.type,
         category: transaction.categoryKey,
-        scheduleType: transaction.scheduleType as 'once' | 'recurring' | 'installment',
+        scheduleType: transaction.scheduleType as ScheduleType,
         seriesId: transaction.seriesId,
         installmentIndex: transaction.installmentIndex,
         installmentCount: transaction.installmentCount,
         isRecurring: transaction.isRecurring,
         dueDate: transaction.dueDate,
-        isPaid: body.isPaid,
+        isPaid: parsed.data.isPaid,
         notes: transaction.notes,
       },
     });

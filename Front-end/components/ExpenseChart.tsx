@@ -66,7 +66,7 @@ const ExpenseChart: React.FC<ExpenseChartProps> = ({ transactions, allCategories
       return acc;
     }, {});
 
-    return Object.entries(categoryTotals)
+    return (Object.entries(categoryTotals) as Array<[string, number]>)
       .map(([categoryKey, value]) => ({
         category: categoryKey,
         value,

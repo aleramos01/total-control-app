@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { appSettings, brandSettings } from '../db/schema.js';
 import { getAuthenticatedAdmin } from '../lib/auth.js';
+import type { AppLocale, Currency } from '../lib/contracts.js';
 import { appSettingsSchema, brandSettingsSchema } from '../lib/validators.js';
 
 const defaultBrandSettings = {
@@ -20,8 +21,8 @@ const defaultBrandSettings = {
 
 const defaultAppSettings = {
   id: 1,
-  currency: 'BRL',
-  locale: 'pt-BR',
+  currency: 'BRL' as Currency,
+  locale: 'pt-BR' as AppLocale,
   timezone: 'America/Sao_Paulo',
   billingDayDefault: 5,
 };
@@ -44,7 +45,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     return reply.send({ settings: settings ?? defaultBrandSettings });
   });
 
-  app.put('/settings/brand', async (request, reply) => {
+  app.put<{ Body: unknown }>('/settings/brand', async (request, reply) => {
     const user = await getAuthenticatedAdmin(request, reply);
     if (!user) {
       return;
@@ -76,7 +77,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     return reply.send({ settings: settings ?? defaultAppSettings });
   });
 
-  app.put('/settings/app', async (request, reply) => {
+  app.put<{ Body: unknown }>('/settings/app', async (request, reply) => {
     const user = await getAuthenticatedAdmin(request, reply);
     if (!user) {
       return;

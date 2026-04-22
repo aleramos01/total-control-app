@@ -1,115 +1,114 @@
-import { sqlite } from './client.js';
-import { PRIMARY_ADMIN_EMAIL } from '../lib/admin.js';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import argon2 from 'argon2';
+import { eq } from 'drizzle-orm';
+import { PRIMARY_ADMIN_EMAIL, PRIMARY_ADMIN_NAME } from '../lib/admin.js';
+import { createId, nowIso } from '../lib/utils.js';
+import { db, queryClient } from './client.js';
+import { users } from './schema.js';
 
-function hasColumn(table: string, column: string) {
-  const rows = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  return rows.some(row => row.name === column);
+let didMigrate = false;
+
+function resolveMigrationsFolder() {
+  const currentFile = fileURLToPath(import.meta.url);
+  return path.resolve(path.dirname(currentFile), '../../drizzle');
 }
 
-function ensureColumn(table: string, column: string, definition: string) {
-  if (!hasColumn(table, column)) {
-    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
-  }
-}
-
-export function ensureSchema() {
-  sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'user',
-      status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      token_hash TEXT NOT NULL UNIQUE,
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS invites (
-      id TEXT PRIMARY KEY,
-      code TEXT NOT NULL UNIQUE,
-      created_by_user_id TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      expires_at TEXT,
-      used_at TEXT,
-      used_by_user_id TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS transactions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      description TEXT NOT NULL,
-      amount REAL NOT NULL,
-      type TEXT NOT NULL,
-      category_key TEXT NOT NULL,
-      transaction_date TEXT NOT NULL,
-      schedule_type TEXT NOT NULL DEFAULT 'once',
-      series_id TEXT,
-      installment_index INTEGER,
-      installment_count INTEGER,
-      is_recurring INTEGER NOT NULL DEFAULT 0,
-      due_date TEXT,
-      is_paid INTEGER NOT NULL DEFAULT 0,
-      notes TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS custom_categories (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      key TEXT NOT NULL,
-      name TEXT NOT NULL,
-      color TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS brand_settings (
-      id INTEGER PRIMARY KEY,
-      product_name TEXT NOT NULL,
-      logo_url TEXT,
-      favicon_url TEXT,
-      primary_color TEXT NOT NULL,
-      accent_color TEXT NOT NULL,
-      surface_color TEXT NOT NULL,
-      text_color TEXT NOT NULL,
-      support_email TEXT,
-      marketing_headline TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS app_settings (
-      id INTEGER PRIMARY KEY,
-      currency TEXT NOT NULL,
-      locale TEXT NOT NULL,
-      timezone TEXT NOT NULL,
-      billing_day_default INTEGER NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions (user_id, transaction_date);
-    CREATE INDEX IF NOT EXISTS idx_transactions_due_date ON transactions (user_id, due_date);
-    CREATE INDEX IF NOT EXISTS idx_transactions_paid ON transactions (user_id, is_paid);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_categories_user_key ON custom_categories (user_id, key);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_invites_code ON invites (code);
+async function ensureMigrationsTable() {
+  await queryClient.query('CREATE SCHEMA IF NOT EXISTS drizzle');
+  await queryClient.query(`
+    CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+      hash text PRIMARY KEY,
+      created_at bigint NOT NULL
+    )
   `);
+}
 
-  if (!hasColumn('users', 'role')) {
-    sqlite.exec(`ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin';`);
+async function applySqlMigrations() {
+  await ensureMigrationsTable();
+
+  const migrationsFolder = resolveMigrationsFolder();
+  const migrationFiles = fs
+    .readdirSync(migrationsFolder)
+    .filter(file => file.endsWith('.sql'))
+    .sort();
+
+  for (const fileName of migrationFiles) {
+    const filePath = path.join(migrationsFolder, fileName);
+    const contents = fs.readFileSync(filePath, 'utf8');
+    const hash = crypto.createHash('sha256').update(contents).digest('hex');
+    const existing = await queryClient.query('SELECT hash FROM drizzle.__drizzle_migrations WHERE hash = $1', [hash]);
+
+    if ((existing.rowCount ?? existing.rows?.length ?? 0) > 0) {
+      continue;
+    }
+
+    const statements = contents
+      .split('--> statement-breakpoint')
+      .map(statement => statement.trim())
+      .filter(Boolean);
+
+    for (const statement of statements) {
+      await queryClient.query(statement);
+    }
+
+    await queryClient.query(
+      'INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)',
+      [hash, Date.now()]
+    );
+  }
+}
+
+export async function ensurePrimaryAdminRole() {
+  await db
+    .update(users)
+    .set({ role: 'admin' })
+    .where(eq(users.email, PRIMARY_ADMIN_EMAIL));
+}
+
+export async function ensurePrimaryAdminAccount() {
+  const password = process.env.PRIMARY_ADMIN_PASSWORD;
+  if (!password) {
+    await ensurePrimaryAdminRole();
+    return;
   }
 
-  ensureColumn('transactions', 'schedule_type', `TEXT NOT NULL DEFAULT 'once'`);
-  ensureColumn('transactions', 'series_id', 'TEXT');
-  ensureColumn('transactions', 'installment_index', 'INTEGER');
-  ensureColumn('transactions', 'installment_count', 'INTEGER');
+  const existingAdmin = await db.query.users.findFirst({
+    where: eq(users.email, PRIMARY_ADMIN_EMAIL),
+  });
 
-  sqlite
-    .prepare(`UPDATE users SET role = 'admin' WHERE lower(email) = lower(?)`)
-    .run(PRIMARY_ADMIN_EMAIL);
+  if (existingAdmin) {
+    await db
+      .update(users)
+      .set({
+        role: 'admin',
+        status: 'active',
+        updatedAt: nowIso(),
+      })
+      .where(eq(users.id, existingAdmin.id));
+    return;
+  }
+
+  const timestamp = nowIso();
+  await db.insert(users).values({
+    id: createId('user'),
+    name: process.env.PRIMARY_ADMIN_NAME?.trim() || PRIMARY_ADMIN_NAME,
+    email: PRIMARY_ADMIN_EMAIL,
+    passwordHash: await argon2.hash(password),
+    role: 'admin',
+    status: 'active',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+}
+
+export async function ensureDatabase() {
+  if (!didMigrate) {
+    await applySqlMigrations();
+    didMigrate = true;
+  }
+
+  await ensurePrimaryAdminAccount();
 }

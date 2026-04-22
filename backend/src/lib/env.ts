@@ -1,4 +1,4 @@
-const requiredKeys = ['SESSION_SECRET'] as const;
+const requiredKeys = ['SESSION_SECRET', 'DATABASE_URL'] as const;
 
 for (const key of requiredKeys) {
   if (!process.env[key]) {
@@ -11,6 +11,8 @@ export const env = {
   port: Number(process.env.PORT ?? '4000'),
   sessionSecret: process.env.SESSION_SECRET as string,
   appBaseUrl: process.env.APP_BASE_URL ?? 'http://127.0.0.1:3000',
+  databaseSsl: process.env.DATABASE_SSL === 'true',
+  databaseSslRejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false',
   corsOrigins: (process.env.CORS_ORIGIN ?? 'http://127.0.0.1:3000,http://localhost:3000')
     .split(',')
     .map(value => value.trim())

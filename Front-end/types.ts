@@ -1,5 +1,8 @@
 import type { Locale } from './locales';
 
+export const transactionScheduleTypes = ['once', 'recurring', 'installment'] as const;
+export type TransactionScheduleType = (typeof transactionScheduleTypes)[number];
+
 export enum TransactionType {
   INCOME = 'income',
   EXPENSE = 'expense',
@@ -51,12 +54,12 @@ export interface Transaction {
   date: string;
   type: TransactionType;
   category: string;
-  scheduleType?: 'once' | 'recurring' | 'installment';
+  scheduleType?: TransactionScheduleType;
   seriesId?: string | null;
   installmentIndex?: number | null;
   installmentCount?: number | null;
   isRecurring?: boolean;
-  dueDate?: string;
+  dueDate?: string | null;
   isPaid?: boolean;
   notes?: string | null;
 }

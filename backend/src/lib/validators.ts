@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { currencies, locales, scheduleTypes, transactionTypes } from './contracts.js';
 
 const hexColor = /^#([0-9a-fA-F]{6})$/;
 
@@ -29,9 +30,9 @@ export const transactionSchema = z.object({
   description: z.string().trim().min(2).max(140),
   amount: z.number().positive().max(999999999),
   date: z.string().datetime(),
-  type: z.enum(['income', 'expense']),
+  type: z.enum(transactionTypes),
   category: z.string().trim().min(2).max(60),
-  scheduleType: z.enum(['once', 'recurring', 'installment']).optional().default('once'),
+  scheduleType: z.enum(scheduleTypes).optional().default('once'),
   installmentCount: z.number().int().min(1).max(36).optional().default(1),
   isRecurring: z.boolean().optional().default(false),
   dueDate: z.string().datetime().optional().nullable(),
@@ -66,20 +67,24 @@ export const brandSettingsSchema = z.object({
 });
 
 export const appSettingsSchema = z.object({
-  currency: z.enum(['BRL', 'USD']),
-  locale: z.enum(['pt-BR', 'en-US']),
+  currency: z.enum(currencies),
+  locale: z.enum(locales),
   timezone: z.string().trim().min(2).max(60),
   billingDayDefault: z.number().int().min(1).max(31),
 });
 
 export const transactionFiltersSchema = z.object({
   q: z.string().trim().max(80).optional(),
-  type: z.enum(['income', 'expense']).optional(),
+  type: z.enum(transactionTypes).optional(),
   category: z.string().trim().max(60).optional(),
   status: z.enum(['paid', 'unpaid']).optional(),
   preset: z.enum(['current_month', 'previous_month', 'next_30_days', 'overdue']).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+});
+
+export const transactionPaymentStatusSchema = z.object({
+  isPaid: z.boolean(),
 });
 
 export const importPayloadSchema = z.object({

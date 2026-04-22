@@ -24,6 +24,7 @@ import { CalendarIcon } from './components/icons/CalendarIcon';
 import { CogIcon } from './components/icons/CogIcon';
 import { PlusIcon } from './components/icons/PlusIcon';
 import { LogoutIcon } from './components/icons/LogoutIcon';
+import { parseImportFilePayload } from './services/parsers';
 
 const emptyBrandSettings: BrandSettings = {
   productName: 'Total Control',
@@ -285,10 +286,10 @@ const App: React.FC = () => {
 
   const handleImportJson = useCallback(async (file: File) => {
     try {
-      const payload = JSON.parse(await file.text()) as Partial<ExportPayload>;
+      const payload = parseImportFilePayload(JSON.parse(await file.text()) as unknown);
       await api.importData({
-        transactions: payload.transactions ?? [],
-        categories: payload.categories ?? [],
+        transactions: payload.transactions,
+        categories: payload.categories,
       });
       showNotification(t('import_success'), 'success');
       fetchData();

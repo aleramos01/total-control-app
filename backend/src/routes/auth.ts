@@ -5,11 +5,21 @@ import { db } from '../db/client.js';
 import { invites, users } from '../db/schema.js';
 import { isPrimaryAdminEmail } from '../lib/admin.js';
 import { clearUserSession, createUserSession, getAuthenticatedUser, getSessionCookie } from '../lib/auth.js';
+import { enforceRateLimit } from '../lib/rate-limit.js';
 import { createId, createInviteCode, nowIso } from '../lib/utils.js';
 import { createInviteSchema, inviteRegisterSchema, loginSchema, registerSchema } from '../lib/validators.js';
 
+const loginRateLimit = { key: 'auth-login', limit: 5, windowMs: 10 * 60 * 1000, errorMessage: 'Too many login attempts' };
+const registerRateLimit = { key: 'auth-register', limit: 3, windowMs: 10 * 60 * 1000, errorMessage: 'Too many registration attempts' };
+const inviteRegistrationRateLimit = { key: 'auth-register-with-invite', limit: 5, windowMs: 10 * 60 * 1000, errorMessage: 'Too many invite registration attempts' };
+const createInviteRateLimit = { key: 'auth-create-invite', limit: 10, windowMs: 60 * 60 * 1000, errorMessage: 'Too many invite creation attempts' };
+
 export async function authRoutes(app: FastifyInstance) {
-  app.post('/auth/register', async (request, reply) => {
+  app.post<{ Body: unknown }>('/auth/register', async (request, reply) => {
+    if (!(await enforceRateLimit(request, reply, registerRateLimit))) {
+      return;
+    }
+
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ message: 'Invalid registration payload', issues: parsed.error.flatten() });
@@ -25,14 +35,15 @@ export async function authRoutes(app: FastifyInstance) {
 
     const timestamp = nowIso();
     const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users);
-    if ((userCount?.count ?? 0) > 0) {
+    const totalUsers = Number(userCount?.count ?? 0);
+    if (totalUsers > 0) {
       return reply.status(403).send({ message: 'Public registration is disabled. Use an invite code.' });
     }
 
     const passwordHash = await argon2.hash(parsed.data.password);
     const userId = createId('user');
     const normalizedEmail = parsed.data.email.toLowerCase();
-    const role = (userCount?.count ?? 0) === 0 || isPrimaryAdminEmail(normalizedEmail) ? 'admin' : 'user';
+    const role = totalUsers === 0 || isPrimaryAdminEmail(normalizedEmail) ? 'admin' : 'user';
 
     await db.insert(users).values({
       id: userId,
@@ -57,7 +68,11 @@ export async function authRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/auth/login', async (request, reply) => {
+  app.post<{ Body: unknown }>('/auth/login', async (request, reply) => {
+    if (!(await enforceRateLimit(request, reply, loginRateLimit))) {
+      return;
+    }
+
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ message: 'Invalid login payload', issues: parsed.error.flatten() });
@@ -95,7 +110,11 @@ export async function authRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/auth/register-with-invite', async (request, reply) => {
+  app.post<{ Body: unknown }>('/auth/register-with-invite', async (request, reply) => {
+    if (!(await enforceRateLimit(request, reply, inviteRegistrationRateLimit))) {
+      return;
+    }
+
     const parsed = inviteRegisterSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ message: 'Invalid registration payload', issues: parsed.error.flatten() });
@@ -158,7 +177,7 @@ export async function authRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/auth/invites', async (request, reply) => {
+  app.post<{ Body: unknown }>('/auth/invites', async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return reply.status(401).send({ message: 'Unauthorized' });
@@ -166,6 +185,10 @@ export async function authRoutes(app: FastifyInstance) {
 
     if (user.role !== 'admin') {
       return reply.status(403).send({ message: 'Admin access required' });
+    }
+
+    if (!(await enforceRateLimit(request, reply, createInviteRateLimit))) {
+      return;
     }
 
     const parsed = createInviteSchema.safeParse(request.body ?? {});

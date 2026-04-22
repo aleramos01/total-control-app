@@ -49,7 +49,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       setScheduleType(resolvedScheduleType);
       setInstallmentCount(transaction.installmentCount ?? 2);
       setIsRecurring(!!transaction.isRecurring);
-      setDueDate(extractDateInputValue(transaction.dueDate));
+      setDueDate(extractDateInputValue(transaction.dueDate ?? undefined));
       setIsPaid(!!transaction.isPaid);
       setNotes(transaction.notes ?? '');
       setIsCategoryManuallySet(true);

@@ -42,7 +42,7 @@ export async function importExportRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/import/json', async (request, reply) => {
+  app.post<{ Body: unknown }>('/import/json', async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) {
       return reply.status(401).send({ message: 'Unauthorized' });

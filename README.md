@@ -3,7 +3,7 @@
 Stack:
 
 - `Front-end/`: React + Vite + TypeScript
-- `backend/`: Fastify + TypeScript + SQLite
+- `backend/`: Fastify + TypeScript + Postgres
 
 This repository is the main product line of Total Control. It contains the current frontend and backend, authentication, settings, import/export, tests, and the mobile-first dark UI work.
 
@@ -14,6 +14,7 @@ This repository is the main product line of Total Control. It contains the curre
 1. `cd backend`
 2. `cp .env.example .env`
 3. Defina `SESSION_SECRET`
+4. Defina `DATABASE_URL` para um Postgres válido
 4. `npm install`
 5. `npm run dev`
 
@@ -43,29 +44,33 @@ This repository is the main product line of Total Control. It contains the curre
 - Output directory: `dist`
 - Required env var: `VITE_API_BASE_URL`
 
-### Railway backend settings
+### Free-tier deploy recommendation
 
-- Project root: `backend`
-- Config as Code file: `/backend/railway.json`
-- Build command: `npm run build`
-- Start command: `npm start`
-- Healthcheck path: `/health`
-- Volume mount path: `/app/data`
+- Frontend: Vercel
+- Backend app: Render Free Web Service
+- Database: Supabase Free Postgres
 
 Required backend env vars:
 
 - `NODE_ENV=production`
 - `SESSION_SECRET=<strong-random-secret>`
-- `DATABASE_URL=./data/total-control.sqlite`
+- `DATABASE_URL=<supabase-postgres-connection-string>`
 - `CORS_ORIGIN=https://<your-frontend>.vercel.app`
 - `APP_BASE_URL=https://<your-frontend>.vercel.app`
 
 Deploy order:
 
-1. Deploy `backend/` to Railway with a persistent volume mounted at `/app/data`
-2. Copy the Railway public backend URL
-3. Set `VITE_API_BASE_URL` in the Vercel frontend project
-4. Redeploy the frontend on Vercel
+1. Create a Supabase project and copy the Postgres connection string.
+2. Deploy `backend/` as a Render Free Web Service.
+3. Set the backend env vars, especially `DATABASE_URL`.
+4. Confirm `https://<your-backend>/health` returns `{ "status": "ok" }`.
+5. Set `VITE_API_BASE_URL` in the Vercel frontend project.
+6. Redeploy the frontend on Vercel.
+
+Notes:
+
+- The backend now uses Postgres and no longer depends on a local SQLite volume.
+- A free backend may cold start after inactivity; this is acceptable for the current low-cost target.
 
 ## Versioning
 
@@ -92,7 +97,7 @@ Unit coverage intentionally focuses on stable, low-flake logic:
 
 - They do not cover full browser interaction flows.
 - They do not replace manual smoke validation of login, create transaction and brand settings.
-- They do not exercise the SQLite file with concurrent load.
+- They do not exercise a production Postgres instance under concurrent load.
 - They do not validate CSS/layout regressions.
 - They are designed to be fast and safe for CI/build, not exhaustive end-to-end coverage.
 
@@ -103,6 +108,7 @@ Minimum pre-deploy check:
 3. Validate register/login
 4. Create, edit and delete a transaction
 5. Validate brand settings save and reload
+6. Confirm the deployed backend reads/writes to Postgres successfully
 
 ## Security defaults
 
