@@ -18,7 +18,6 @@ Deno.serve(async req => {
     const name = typeof payload?.name === 'string' ? payload.name.trim() : '';
     const email = typeof payload?.email === 'string' ? payload.email.trim().toLowerCase() : '';
     const password = typeof payload?.password === 'string' ? payload.password : '';
-    const inviteCode = typeof payload?.inviteCode === 'string' ? payload.inviteCode.trim().toUpperCase() : '';
 
     if (name.length < 2 || name.length > 80 || email.length === 0 || password.length < 8) {
       throw new HttpError(400, 'Invalid registration payload');
@@ -33,33 +32,7 @@ Deno.serve(async req => {
       throw new HttpError(400, countError.message);
     }
 
-    const isFirstUser = (count ?? 0) === 0;
-    let inviteId: string | null = null;
-
-    if (!isFirstUser) {
-      const { data: invite, error: inviteError } = await adminClient
-        .from('invites')
-        .select('id, code, expires_at, used_at')
-        .eq('code', inviteCode)
-        .is('used_at', null)
-        .maybeSingle();
-
-      if (inviteError) {
-        throw new HttpError(400, inviteError.message);
-      }
-
-      if (!invite) {
-        throw new HttpError(400, 'Invalid or unavailable invite code');
-      }
-
-      if (invite.expires_at && new Date(invite.expires_at).getTime() <= Date.now()) {
-        throw new HttpError(400, 'Invite code expired');
-      }
-
-      inviteId = invite.id;
-    }
-
-    const role = isFirstUser ? 'admin' : 'user';
+    const role = (count ?? 0) === 0 ? 'admin' : 'user';
     const createdAt = nowIso();
     const { data: authResult, error: createError } = await adminClient.auth.admin.createUser({
       email,
@@ -74,7 +47,6 @@ Deno.serve(async req => {
     }
 
     const userId = authResult.user.id;
-
     const { error: profileError } = await adminClient
       .from('profiles')
       .upsert({
@@ -90,22 +62,6 @@ Deno.serve(async req => {
     if (profileError) {
       await cleanupUser(userId);
       throw new HttpError(400, profileError.message);
-    }
-
-    if (inviteId) {
-      const { error: inviteUpdateError } = await adminClient
-        .from('invites')
-        .update({
-          used_at: createdAt,
-          used_by_user_id: userId,
-        })
-        .eq('id', inviteId)
-        .is('used_at', null);
-
-      if (inviteUpdateError) {
-        await cleanupUser(userId);
-        throw new HttpError(400, inviteUpdateError.message);
-      }
     }
 
     return jsonResponse({

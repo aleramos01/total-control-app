@@ -9,6 +9,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (data: { email: string; password: string; rememberMe?: boolean }) => Promise<void>;
+  register: (data: { name: string; email: string; password: string }) => Promise<void>;
   registerWithInvite: (data: { name: string; email: string; password: string; inviteCode: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -48,6 +49,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(response.user);
   };
 
+  const register = async (data: { name: string; email: string; password: string }) => {
+    const response = await api.registerUser(data);
+    setUser(response.user);
+  };
+
   const registerWithInvite = async (data: { name: string; email: string; password: string; inviteCode: string }) => {
     const response = await api.registerWithInvite(data);
     setUser(response.user);
@@ -67,7 +73,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, registerWithInvite, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, register, registerWithInvite, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

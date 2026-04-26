@@ -10,16 +10,26 @@ interface AuthPageProps {
 }
 
 const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
-  const [mode, setMode] = useState<'login' | 'invite'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'invite'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const { login, registerWithInvite } = useAuth();
+  const { login, register, registerWithInvite } = useAuth();
   const { showNotification } = useNotification();
   const { t } = useLanguage();
+
+  const isInviteMode = mode === 'invite';
+  const isRegisterMode = mode === 'register';
+
+  const switchMode = (nextMode: 'login' | 'register' | 'invite') => {
+    setMode(nextMode);
+    if (nextMode === 'login') {
+      setInviteCode('');
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -28,6 +38,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
     try {
       if (mode === 'login') {
         await login({ email, password, rememberMe });
+      } else if (mode === 'register') {
+        await register({ name, email, password });
       } else {
         await registerWithInvite({ name, email, password, inviteCode });
       }
@@ -75,15 +87,36 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
         </section>
 
         <section className="rounded-[32px] border border-white/10 bg-slate-800/70 p-8 shadow-[0_20px_70px_rgba(15,23,42,0.45)] backdrop-blur lg:p-10">
+          <div className="mb-6 grid grid-cols-3 gap-2 rounded-3xl border border-white/10 bg-slate-900/55 p-2">
+            {([
+              { id: 'login', label: t('login_button') },
+              { id: 'register', label: t('register_button') },
+              { id: 'invite', label: t('invite_mode_button') },
+            ] as const).map(option => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => switchMode(option.id)}
+                className={`rounded-2xl px-3 py-3 text-sm font-semibold transition ${
+                  mode === option.id ? 'bg-slate-50 text-slate-900' : 'text-slate-400 hover:text-slate-100'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-slate-50">{mode === 'login' ? t('login_title') : t('invite_button')}</h2>
+            <h2 className="text-2xl font-bold text-slate-50">
+              {mode === 'login' ? t('login_title') : isRegisterMode ? t('register_title') : t('invite_title')}
+            </h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              {mode === 'login' ? t('login_description') : t('invite_helper')}
+              {mode === 'login' ? t('login_description') : isRegisterMode ? t('register_helper') : t('invite_helper')}
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === 'invite' && (
+            {(isInviteMode || isRegisterMode) && (
               <div>
                 <label htmlFor="name" className="mb-2 block text-sm font-medium text-slate-300">{t('name')}</label>
                 <input
@@ -96,7 +129,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
               </div>
             )}
 
-            {mode === 'invite' && (
+            {isInviteMode && (
               <div>
                 <label htmlFor="inviteCode" className="mb-2 block text-sm font-medium text-slate-300">{t('invite_code')}</label>
                 <input
@@ -154,13 +187,44 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
 
           <div className="mt-6 space-y-3 text-sm text-slate-400">
             <p>{t('auth_helper')}</p>
-            <button
-              type="button"
-              onClick={() => setMode(current => current === 'login' ? 'invite' : 'login')}
-              className="font-semibold text-[var(--app-primary)]"
-            >
-              {mode === 'login' ? t('have_invite') : t('back_to_login')}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              {mode !== 'login' ? (
+                <button
+                  type="button"
+                  onClick={() => switchMode('login')}
+                  className="font-semibold text-[var(--app-primary)]"
+                >
+                  {t('back_to_login')}
+                </button>
+              ) : null}
+              {mode === 'login' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => switchMode('register')}
+                    className="font-semibold text-[var(--app-primary)]"
+                  >
+                    {t('register_now')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchMode('invite')}
+                    className="font-semibold text-[var(--app-primary)]"
+                  >
+                    {t('have_invite')}
+                  </button>
+                </>
+              ) : null}
+              {mode === 'register' ? (
+                <button
+                  type="button"
+                  onClick={() => switchMode('invite')}
+                  className="font-semibold text-[var(--app-primary)]"
+                >
+                  {t('invite_mode_button')}
+                </button>
+              ) : null}
+            </div>
           </div>
         </section>
       </div>

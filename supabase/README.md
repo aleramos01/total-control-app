@@ -1,26 +1,35 @@
 ## Supabase
 
-Estrutura local para a migracao do Total Control para Supabase.
+Local structure for the Total Control production backend on Supabase.
 
-### O que existe aqui
+### What exists here
 
-- `migrations/`: schema, seeds iniciais e politicas de RLS
-- `functions/register-with-invite`: cadastro com convite e bootstrap do primeiro admin
-- `functions/create-invite`: criacao de convites por admin
-- `functions/import-data`: importacao de categorias e transacoes
+- `migrations/`: schema, seeds and RLS policies
+- `functions/register-public`: public signup and first-admin bootstrap
+- `functions/register-with-invite`: invite-based signup
+- `functions/create-invite`: admin invite creation
+- `functions/import-data`: categories and transactions import pipeline
 
-### Segredos necessarios nas Edge Functions
+### Required secrets in Edge Functions
 
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-### Variaveis do frontend
+### Frontend environment variables
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-### Ordem recomendada de aplicacao
+### Recommended dashboard order
 
-1. Aplicar a migration em `migrations/`
-2. Publicar as Edge Functions
-3. Configurar o segredo `SUPABASE_SERVICE_ROLE_KEY`
-4. Configurar as variaveis `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` na Vercel
+1. Create or open the final Supabase project
+2. Apply the SQL migration in `migrations/`
+3. Deploy all functions in `functions/`
+4. Configure `SUPABASE_SERVICE_ROLE_KEY`
+5. Review Auth settings and allowed URLs
+6. Configure Vercel with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+
+### Auth rules expected by the app
+
+- First public signup becomes admin
+- Later public signups become regular users
+- Invite signups remain available and also create regular users unless the system has no users yet

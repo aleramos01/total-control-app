@@ -96,6 +96,11 @@ export async function loginUser(data: { email: string; password: string; remembe
   return { user: await getCurrentProfile(authData.user.id) };
 }
 
+export async function registerUser(data: { name: string; email: string; password: string }): Promise<UserResponse> {
+  await invokeFunction<UserResponse>('register-public', data);
+  return loginUser({ email: data.email, password: data.password, rememberMe: true });
+}
+
 export async function registerWithInvite(data: { name: string; email: string; password: string; inviteCode: string }): Promise<UserResponse> {
   await invokeFunction<UserResponse>('register-with-invite', data);
   return loginUser({ email: data.email, password: data.password, rememberMe: true });
