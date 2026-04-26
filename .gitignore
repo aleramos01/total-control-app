@@ -4,4 +4,7 @@ backend/node_modules
 backend/dist
 backend/data
 .DS_Store
+**/.env
+**/.env.*
+!**/.env.example
 

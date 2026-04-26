@@ -4,126 +4,71 @@ Stack:
 
 - `Front-end/`: React + Vite + TypeScript
 - `backend/`: Fastify + TypeScript + Postgres
+- `supabase/`: migrations and Edge Functions for the Supabase cutover
 
-This repository is the main product line of Total Control. It contains the current frontend and backend, authentication, settings, import/export, tests, and the mobile-first dark UI work.
+This repository now carries both the legacy backend and the new Supabase-first migration path for the frontend.
 
 ## Run locally
 
-### Banco de dados local com Docker
-
-1. `docker compose up -d`
-2. Aguarde o container `postgres` ficar healthy
-3. Banco principal: `postgresql://postgres:postgres@127.0.0.1:5432/total_control`
-4. Banco de testes: `postgresql://postgres:postgres@127.0.0.1:5432/total_control_test`
-
-### Backend
-
-1. `cd backend`
-2. `cp .env.example .env`
-3. Defina `SESSION_SECRET`
-4. Mantenha `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/total_control`
-5. `npm install`
-6. `npm run db:migrate`
-7. `npm run db:seed-demo`
-8. `npm run dev`
-
-### Frontend
+### Frontend with Supabase
 
 1. `cd Front-end`
 2. `cp .env.example .env`
-3. `npm install`
-4. `npm run dev`
+3. Fill `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+4. `npm install`
+5. `npm run dev`
 
-## Repository Intent
+### Legacy backend with local Postgres
 
-- Main application repository
-- Current product state with backend and frontend together
-- Recommended GitHub repository name: `total-control-app`
+1. `docker compose up -d`
+2. Wait for the `postgres` container to become healthy
+3. `cd backend`
+4. `cp .env.example .env`
+5. Set `SESSION_SECRET`
+6. Keep `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/total_control`
+7. `npm install`
+8. `npm run db:migrate`
+9. `npm run db:seed-demo`
+10. `npm run dev`
 
-## Deploy split
+## Supabase deployment
 
-- `Front-end/`: deploy recomendado na Vercel
-- `backend/`: deploy separado da Vercel nesta fase
-
-### Vercel frontend settings
+### Frontend on Vercel
 
 - Project root: `Front-end`
 - Node version: `20.x`
 - Build command: `npm run build`
 - Output directory: `dist`
-- Required env var: `VITE_API_BASE_URL`
+- Required env vars:
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
 
-### Free-tier deploy recommendation
+### Supabase project
 
-- Frontend: Vercel
-- Backend app: Render Free Web Service
-- Database: Supabase Free Postgres
+- Apply the SQL in `supabase/migrations/`
+- Deploy the functions in `supabase/functions/`
+- Configure the function secret:
+  - `SUPABASE_SERVICE_ROLE_KEY`
 
-Required backend env vars:
+### Main migration assets
 
-- `NODE_ENV=production`
-- `SESSION_SECRET=<strong-random-secret>`
-- `DATABASE_URL=<supabase-postgres-connection-string>`
-- `CORS_ORIGIN=https://<your-frontend>.vercel.app`
-- `APP_BASE_URL=https://<your-frontend>.vercel.app`
-
-Deploy order:
-
-1. Create a Supabase project and copy the Postgres connection string.
-2. Deploy `backend/` as a Render Free Web Service.
-3. Set the backend env vars, especially `DATABASE_URL`.
-4. Confirm `https://<your-backend>/health` returns `{ "status": "ok" }`.
-5. Set `VITE_API_BASE_URL` in the Vercel frontend project.
-6. Redeploy the frontend on Vercel.
-
-Notes:
-
-- O backend usa apenas PostgreSQL.
-- O `docker compose` local também cria `total_control_test` para os testes automatizados do backend.
-- A free backend may cold start after inactivity; this is acceptable for the current low-cost target.
-
-## Versioning
-
-- Current MVP baseline: `0.1.0`
-- Commit style: Conventional Commits (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`)
-- Semantic versioning: `MAJOR.MINOR.PATCH`
+- `supabase/functions/register-with-invite`: invite-based signup and first-admin bootstrap
+- `supabase/functions/create-invite`: admin invite generation
+- `supabase/functions/import-data`: import pipeline for categories and transactions
 
 ## Test and verification
 
-- Run all unit tests: `npm run test`
-- Run all builds: `npm run build`
-- Run release gate: `npm run verify`
+- Frontend tests: `npm --prefix Front-end run test`
+- Frontend build: `npm --prefix Front-end run build`
+- Workspace build: `npm run build`
 
-Unit coverage intentionally focuses on stable, low-flake logic:
+Notes:
 
-- backend utility functions
-- backend payload validators
-- category key normalization
-- frontend transaction query serialization
-- frontend CSV generation
-- frontend recurring-bill derivation
+- `npm run verify` still exercises the legacy backend tests, which require a running Postgres instance on `127.0.0.1:5432`.
+- The Supabase migration work in this repository does not automatically provision or deploy your Supabase project.
 
-## Current limitations of the automated tests
+## Security
 
-- They do not cover full browser interaction flows.
-- They do not replace manual smoke validation of login, create transaction and brand settings.
-- They do not exercise a production Postgres instance under concurrent load.
-- They do not validate CSS/layout regressions.
-- They are designed to be fast and safe for CI/build, not exhaustive end-to-end coverage.
-
-Minimum pre-deploy check:
-
-1. `npm run verify`
-2. Start backend and frontend locally
-3. Validate register/login
-4. Create, edit and delete a transaction
-5. Validate brand settings save and reload
-6. Confirm the deployed backend reads/writes to Postgres successfully
-
-## Security defaults
-
-- Passwords hashed with `argon2`
-- Session cookie uses `httpOnly`, `SameSite=None` in production and `SameSite=Lax` outside production
-- No API secrets exposed in the frontend
-- Financial data persisted in PostgreSQL
-- Recommended production runtime: Node `20+`
+- Do not expose `SUPABASE_SERVICE_ROLE_KEY` in the frontend
+- Keep `VITE_SUPABASE_ANON_KEY` only in the Vercel frontend env settings
+- Rotate any leaked database credentials before production rollout

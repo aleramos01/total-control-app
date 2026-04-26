@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useCallback, ReactNode } fro
 import * as api from './services/api';
 import Spinner from './components/Spinner';
 import { User } from './types';
+import { supabase } from './services/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -30,6 +31,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     refreshUser().finally(() => setIsLoading(false));
+  }, [refreshUser]);
+
+  useEffect(() => {
+    const { data: subscription } = supabase.auth.onAuthStateChange(() => {
+      refreshUser().finally(() => setIsLoading(false));
+    });
+
+    return () => {
+      subscription.subscription.unsubscribe();
+    };
   }, [refreshUser]);
 
   const login = async (data: { email: string; password: string; rememberMe?: boolean }) => {
