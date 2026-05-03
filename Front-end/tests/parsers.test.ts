@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TransactionType } from '../types.js';
-import { parseAuthStatusResponse, parseCurrentUserResponse, parseImportFilePayload, parseTransactionsResponse } from '../services/parsers.js';
+import { parseAuthStatusResponse, parseCurrentUserResponse, parseImportFilePayload, parseInviteResponse, parseTransactionsResponse } from '../services/parsers.js';
 
 test('parseCurrentUserResponse rejects malformed payloads', () => {
   assert.throws(
@@ -36,6 +36,19 @@ test('parseTransactionsResponse returns typed transactions', () => {
   });
 
   assert.equal(response.transactions[0].scheduleType, 'recurring');
+});
+
+test('parseInviteResponse accepts function payloads with camelCase timestamps', () => {
+  const response = parseInviteResponse({
+    invite: {
+      code: 'ABC123XYZ',
+      createdAt: '2026-05-03T18:00:00.000Z',
+      expiresAt: '2026-05-17T18:00:00.000Z',
+    },
+  });
+
+  assert.equal(response.invite.code, 'ABC123XYZ');
+  assert.equal(response.invite.expiresAt, '2026-05-17T18:00:00.000Z');
 });
 
 test('parseImportFilePayload accepts missing arrays as empty lists', () => {

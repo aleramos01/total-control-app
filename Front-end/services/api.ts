@@ -2,7 +2,7 @@ import type { FunctionsHttpError } from '@supabase/supabase-js';
 import type { AppSettings, AuthStatus, BrandSettings, CustomCategory, ExportPayload, InviteInfo, Transaction, TransactionFilters, User } from '../types';
 import { buildTransactionInsertRows, buildTransactionUpdateRow, buildCategoryInsertRow, buildPresetRange, defaultAppSettings, mapAppSettingsRow, mapBrandSettingsRow, mapCategoryRow, mapInviteRow, mapProfileRow, mapTransactionRow, type DbAppSettingsRow, type DbBrandSettingsRow, type DbCategoryRow, type DbInviteRow, type DbProfileRow, type DbTransactionRow } from './supabase-helpers';
 import { resolveImportedTransactionCategory } from '../lib/categories';
-import { parseAuthStatusResponse } from './parsers';
+import { parseAuthStatusResponse, parseInviteResponse } from './parsers';
 import { supabase } from './supabase';
 
 type UserResponse = { user: User };
@@ -392,8 +392,8 @@ export async function importData(payload: Pick<ExportPayload, 'transactions' | '
 }
 
 export async function createInvite(expiresInDays?: number): Promise<InviteInfo> {
-  const data = await invokeFunction<{ invite: DbInviteRow }>('create-invite', expiresInDays ? { expiresInDays } : {});
-  return mapInviteRow(data.invite);
+  const data = await invokeFunction('create-invite', expiresInDays ? { expiresInDays } : {});
+  return parseInviteResponse(data).invite;
 }
 
 export { resolveImportedTransactionCategory };
