@@ -1,7 +1,8 @@
 import type { FunctionsHttpError } from '@supabase/supabase-js';
-import type { AppSettings, BrandSettings, CustomCategory, ExportPayload, InviteInfo, Transaction, TransactionFilters, User } from '../types';
+import type { AppSettings, AuthStatus, BrandSettings, CustomCategory, ExportPayload, InviteInfo, Transaction, TransactionFilters, User } from '../types';
 import { buildTransactionInsertRows, buildTransactionUpdateRow, buildCategoryInsertRow, buildPresetRange, defaultAppSettings, mapAppSettingsRow, mapBrandSettingsRow, mapCategoryRow, mapInviteRow, mapProfileRow, mapTransactionRow, type DbAppSettingsRow, type DbBrandSettingsRow, type DbCategoryRow, type DbInviteRow, type DbProfileRow, type DbTransactionRow } from './supabase-helpers';
 import { resolveImportedTransactionCategory } from '../lib/categories';
+import { parseAuthStatusResponse } from './parsers';
 import { supabase } from './supabase';
 
 type UserResponse = { user: User };
@@ -81,6 +82,11 @@ async function invokeFunction<T>(name: string, body?: unknown) {
 
 export async function getCurrentUser(): Promise<User> {
   return getCurrentProfile();
+}
+
+export async function fetchAuthStatus(): Promise<AuthStatus> {
+  const data = await invokeFunction<AuthStatus>('auth-status');
+  return parseAuthStatusResponse(data);
 }
 
 export async function loginUser(data: { email: string; password: string; rememberMe?: boolean }): Promise<UserResponse> {

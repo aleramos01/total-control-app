@@ -15,6 +15,10 @@ export interface User {
   role: 'admin' | 'user';
 }
 
+export interface AuthStatus {
+  publicRegistrationOpen: boolean;
+}
+
 export interface InviteInfo {
   code: string;
   createdAt: string;

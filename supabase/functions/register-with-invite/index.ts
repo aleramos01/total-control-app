@@ -25,15 +25,16 @@ Deno.serve(async req => {
     }
 
     const adminClient = createAdminClient();
-    const { count, error: countError } = await adminClient
+    const { data: existingProfiles, error: countError } = await adminClient
       .from('profiles')
-      .select('id', { count: 'exact', head: true });
+      .select('id')
+      .limit(1);
 
     if (countError) {
       throw new HttpError(400, countError.message);
     }
 
-    const isFirstUser = (count ?? 0) === 0;
+    const isFirstUser = (existingProfiles ?? []).length === 0;
     let inviteId: string | null = null;
 
     if (!isFirstUser) {

@@ -24,15 +24,20 @@ Deno.serve(async req => {
     }
 
     const adminClient = createAdminClient();
-    const { count, error: countError } = await adminClient
+    const { data: existingProfiles, error: countError } = await adminClient
       .from('profiles')
-      .select('id', { count: 'exact', head: true });
+      .select('id')
+      .limit(1);
 
     if (countError) {
       throw new HttpError(400, countError.message);
     }
 
-    const role = (count ?? 0) === 0 ? 'admin' : 'user';
+    if ((existingProfiles ?? []).length > 0) {
+      throw new HttpError(403, 'Public registration is closed. Ask an administrator for an invite.');
+    }
+
+    const role = 'admin';
     const createdAt = nowIso();
     const { data: authResult, error: createError } = await adminClient.auth.admin.createUser({
       email,

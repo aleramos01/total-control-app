@@ -1,4 +1,4 @@
-import { type AppSettings, type BrandSettings, type CustomCategory, type ExportPayload, type InviteInfo, type Transaction, TransactionType, type TransactionScheduleType, transactionScheduleTypes, type User } from '../types';
+import { type AppSettings, type AuthStatus, type BrandSettings, type CustomCategory, type ExportPayload, type InviteInfo, type Transaction, TransactionType, type TransactionScheduleType, transactionScheduleTypes, type User } from '../types';
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -190,6 +190,17 @@ export function parseMessageResponse(value: unknown) {
 export function parseCurrentUserResponse(value: unknown) {
   const record = parseRecord(value, 'Invalid auth response');
   return { user: parseUser(record.user) };
+}
+
+export function parseAuthStatusResponse(value: unknown): AuthStatus {
+  const record = parseRecord(value, 'Invalid auth status payload');
+  if (!isBoolean(record.publicRegistrationOpen)) {
+    throw new Error('Invalid auth status payload');
+  }
+
+  return {
+    publicRegistrationOpen: record.publicRegistrationOpen,
+  };
 }
 
 export function parseTransactionsResponse(value: unknown) {

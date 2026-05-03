@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../LanguageContext';
 import { useNotification } from '../NotificationContext';
 import Spinner from './Spinner';
 import { BrandSettings } from '../types';
+import * as api from '../services/api';
 
 interface AuthPageProps {
   brandSettings: BrandSettings;
@@ -17,6 +18,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
   const [inviteCode, setInviteCode] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAuthStatusLoading, setIsAuthStatusLoading] = useState(true);
+  const [publicRegistrationOpen, setPublicRegistrationOpen] = useState(false);
   const { login, register, registerWithInvite } = useAuth();
   const { showNotification } = useNotification();
   const { t } = useLanguage();
@@ -24,7 +27,58 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
   const isInviteMode = mode === 'invite';
   const isRegisterMode = mode === 'register';
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAuthStatus = async () => {
+      setIsAuthStatusLoading(true);
+      try {
+        const status = await api.fetchAuthStatus();
+        if (!isMounted) {
+          return;
+        }
+
+        setPublicRegistrationOpen(status.publicRegistrationOpen);
+        if (!status.publicRegistrationOpen) {
+          setMode(current => current === 'register' ? 'login' : current);
+        }
+      } catch (error) {
+        console.error(error);
+        if (isMounted) {
+          setPublicRegistrationOpen(false);
+        }
+      } finally {
+        if (isMounted) {
+          setIsAuthStatusLoading(false);
+        }
+      }
+    };
+
+    void loadAuthStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const modeOptions: Array<{ id: 'login' | 'register' | 'invite'; label: string }> = useMemo(() => ([
+    { id: 'login', label: t('login_button') },
+    ...(publicRegistrationOpen
+      ? [{ id: 'register', label: t('register_button') }]
+      : [{ id: 'invite', label: t('invite_mode_button') }]),
+  ]), [publicRegistrationOpen, t]);
+
+  const authModeMessage = isAuthStatusLoading
+    ? t('checking_access_modes')
+    : publicRegistrationOpen
+      ? t('register_bootstrap_helper')
+      : t('public_registration_closed');
+
   const switchMode = (nextMode: 'login' | 'register' | 'invite') => {
+    if (nextMode === 'register' && !publicRegistrationOpen) {
+      return;
+    }
+
     setMode(nextMode);
     if (nextMode === 'login') {
       setInviteCode('');
@@ -39,6 +93,9 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
       if (mode === 'login') {
         await login({ email, password, rememberMe });
       } else if (mode === 'register') {
+        if (!publicRegistrationOpen) {
+          throw new Error(t('public_registration_closed'));
+        }
         await register({ name, email, password });
       } else {
         await registerWithInvite({ name, email, password, inviteCode });
@@ -87,16 +144,13 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
         </section>
 
         <section className="rounded-[32px] border border-white/10 bg-slate-800/70 p-8 shadow-[0_20px_70px_rgba(15,23,42,0.45)] backdrop-blur lg:p-10">
-          <div className="mb-6 grid grid-cols-3 gap-2 rounded-3xl border border-white/10 bg-slate-900/55 p-2">
-            {([
-              { id: 'login', label: t('login_button') },
-              { id: 'register', label: t('register_button') },
-              { id: 'invite', label: t('invite_mode_button') },
-            ] as const).map(option => (
+          <div className="mb-6 grid grid-cols-2 gap-2 rounded-3xl border border-white/10 bg-slate-900/55 p-2">
+            {modeOptions.map(option => (
               <button
                 key={option.id}
                 type="button"
                 onClick={() => switchMode(option.id)}
+                disabled={isAuthStatusLoading}
                 className={`rounded-2xl px-3 py-3 text-sm font-semibold transition ${
                   mode === option.id ? 'bg-slate-50 text-slate-900' : 'text-slate-400 hover:text-slate-100'
                 }`}
@@ -112,6 +166,9 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">
               {mode === 'login' ? t('login_description') : isRegisterMode ? t('register_helper') : t('invite_helper')}
+            </p>
+            <p className="mt-3 text-sm font-medium text-[var(--app-primary)]">
+              {authModeMessage}
             </p>
           </div>
 
@@ -181,7 +238,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
             ) : null}
 
             <button type="submit" disabled={isLoading} className="button-primary w-full justify-center">
-              {isLoading ? <Spinner className="h-5 w-5" /> : mode === 'login' ? t('login_button') : t('invite_button')}
+              {isLoading ? <Spinner className="h-5 w-5" /> : mode === 'login' ? t('login_button') : mode === 'register' ? t('register_button') : t('invite_button')}
             </button>
           </form>
 
@@ -199,30 +256,24 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
               ) : null}
               {mode === 'login' ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => switchMode('register')}
-                    className="font-semibold text-[var(--app-primary)]"
-                  >
-                    {t('register_now')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => switchMode('invite')}
-                    className="font-semibold text-[var(--app-primary)]"
-                  >
-                    {t('have_invite')}
-                  </button>
+                  {publicRegistrationOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => switchMode('register')}
+                      className="font-semibold text-[var(--app-primary)]"
+                    >
+                      {t('register_now')}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => switchMode('invite')}
+                      className="font-semibold text-[var(--app-primary)]"
+                    >
+                      {t('have_invite')}
+                    </button>
+                  )}
                 </>
-              ) : null}
-              {mode === 'register' ? (
-                <button
-                  type="button"
-                  onClick={() => switchMode('invite')}
-                  className="font-semibold text-[var(--app-primary)]"
-                >
-                  {t('invite_mode_button')}
-                </button>
               ) : null}
             </div>
           </div>
