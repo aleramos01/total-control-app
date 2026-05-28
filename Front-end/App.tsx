@@ -13,12 +13,12 @@ import * as api from './services/api';
 import Spinner from './components/Spinner';
 import AuthPage from './components/AuthPage';
 import { useAuth } from './hooks/useAuth';
-import { AppSettings, BrandSettings, CustomCategory, ExportPayload, InviteInfo, Transaction, TransactionFilters, TransactionType } from './types';
+import { AppSettings, BrandSettings, CustomCategory, ExportPayload, ImportPreviewPayload, InviteInfo, StatementImportAction, StatementImportPreview, Transaction, TransactionFilters, TransactionScope, TransactionType } from './types';
 import UpcomingBills from './components/UpcomingBills';
 import BrandSettingsModal from './components/BrandSettingsModal';
 import InviteManagementModal from './components/InviteManagementModal';
 import AppSettingsModal from './components/AppSettingsModal';
-import { buildTransactionsCsv } from './lib/transactions';
+import { buildTransactionsCsv, buildTransactionsCsvFilename } from './lib/transactions';
 import ExpenseChart from './components/ExpenseChart';
 import { BarChartIcon } from './components/icons/BarChartIcon';
 import { CalendarIcon } from './components/icons/CalendarIcon';
@@ -26,6 +26,12 @@ import { CogIcon } from './components/icons/CogIcon';
 import { PlusIcon } from './components/icons/PlusIcon';
 import { LogoutIcon } from './components/icons/LogoutIcon';
 import { parseImportFilePayload } from './services/parsers';
+import StatePanel from './components/StatePanel';
+import ImportPreviewModal from './components/ImportPreviewModal';
+import StatementImportPreviewModal from './components/StatementImportPreviewModal';
+import CsvColumnMappingModal from './components/CsvColumnMappingModal';
+import { buildStatementImportPreview, detectCsvHeaders, parseBankStatementCsvWithMapping, parseBankStatementCsv, type CsvColumnMapping } from './lib/statement-import';
+import { parseOfxFile } from './lib/ofx-import';
 
 const emptyBrandSettings: BrandSettings = {
   productName: 'Total Control',
@@ -56,6 +62,8 @@ const App: React.FC = () => {
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [bootstrappingError, setBootstrappingError] = useState<string | null>(null);
+  const [dataError, setDataError] = useState<string | null>(null);
   const [filters, setFilters] = useState<TransactionFilters>(defaultCurrentMonthFilters);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,17 +74,29 @@ const App: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [activeTab, setActiveTab] = useState<MobileTab>('summary');
   const [latestInvite, setLatestInvite] = useState<InviteInfo | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreviewPayload | null>(null);
+  const [statementImportPreview, setStatementImportPreview] = useState<StatementImportPreview | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isStatementImporting, setIsStatementImporting] = useState(false);
+  const [csvMappingState, setCsvMappingState] = useState<{
+    rawText: string;
+    fileName: string;
+    headers: string[];
+    sampleRows: string[][];
+  } | null>(null);
 
   const fetchBrand = useCallback(async () => {
+    setBootstrappingError(null);
     try {
       const settings = await api.fetchBrandSettings();
       setBrandSettings(settings);
     } catch (error) {
       console.error(error);
+      setBootstrappingError(error instanceof Error ? error.message : t('startup_error_description'));
     } finally {
       setIsBootstrapping(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchBrand();
@@ -106,11 +126,13 @@ const App: React.FC = () => {
     if (!isAuthenticated) {
       setTransactions([]);
       setCustomCategories([]);
+      setDataError(null);
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
+    setDataError(null);
     try {
       const [transactionsData, categoriesData] = await Promise.all([
         api.fetchTransactions(filters),
@@ -120,6 +142,7 @@ const App: React.FC = () => {
       setCustomCategories(categoriesData);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to fetch data';
+      setDataError(message);
       showNotification(message, 'error');
     } finally {
       setIsLoading(false);
@@ -163,15 +186,21 @@ const App: React.FC = () => {
     };
   }, [transactions]);
 
-  const handleSaveTransaction = useCallback(async (transaction: Omit<Transaction, 'id'> & { id?: string }) => {
+  const handleSaveTransaction = useCallback(async (transaction: Omit<Transaction, 'id'> & { id?: string }, scope: TransactionScope) => {
     try {
-      const savedTransactions = await api.saveTransactionBatch(transaction);
+      const savedTransactions = await api.saveTransactionBatch(transaction, scope);
       if (transaction.id) {
-        setTransactions(prev => prev.map(item => item.id === savedTransactions[0].id ? savedTransactions[0] : item));
+        const updatedMap = new Map(savedTransactions.map(item => [item.id, item]));
+        setTransactions(prev => prev.map(item => updatedMap.get(item.id) ?? item));
       } else {
         fetchData();
       }
-      showNotification(transaction.id ? t('transaction_updated_success') : t('transaction_added_success'), 'success');
+      const successMessage = !transaction.id
+        ? t('transaction_added_success')
+        : scope === 'series'
+          ? t('transaction_series_updated_success')
+          : t('transaction_updated_success');
+      showNotification(successMessage, 'success');
       setIsModalOpen(false);
       setEditingTransaction(null);
     } catch (error) {
@@ -191,6 +220,17 @@ const App: React.FC = () => {
     }
   }, [showNotification, t]);
 
+  const handleDeleteTransactions = useCallback(async (ids: string[]) => {
+    try {
+      await api.deleteTransactions(ids);
+      setTransactions(prev => prev.filter(item => !ids.includes(item.id)));
+      showNotification(t('transactions_deleted_success').replace('{count}', String(ids.length)), 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete transactions';
+      showNotification(message, 'error');
+    }
+  }, [showNotification, t]);
+
   const handleTogglePaidStatus = useCallback(async (id: string, isPaid: boolean) => {
     try {
       const updatedTransaction = await api.toggleTransactionPaidStatus(id, isPaid);
@@ -200,6 +240,21 @@ const App: React.FC = () => {
       showNotification(message, 'error');
     }
   }, [showNotification]);
+
+  const handleTogglePaidMany = useCallback(async (ids: string[], isPaid: boolean) => {
+    try {
+      const updatedTransactions = await api.toggleTransactionsPaidStatus(ids, isPaid);
+      const updatedMap = new Map(updatedTransactions.map(transaction => [transaction.id, transaction]));
+      setTransactions(prev => prev.map(item => updatedMap.get(item.id) ?? item));
+      showNotification(
+        (isPaid ? t('transactions_marked_paid_success') : t('transactions_marked_unpaid_success')).replace('{count}', String(updatedTransactions.length)),
+        'success',
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update transactions';
+      showNotification(message, 'error');
+    }
+  }, [showNotification, t]);
 
   const handleAddCategory = useCallback(async (category: Omit<CustomCategory, 'id' | 'key'>) => {
     try {
@@ -270,6 +325,7 @@ const App: React.FC = () => {
 
   const handleExportCsv = useCallback(() => {
     if (transactions.length === 0) {
+      showNotification(t('export_csv_empty'), 'error');
       return;
     }
     const csv = buildTransactionsCsv(transactions, allCategoriesMap);
@@ -277,10 +333,10 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'transactions.csv';
+    link.download = buildTransactionsCsvFilename();
     link.click();
     URL.revokeObjectURL(url);
-  }, [allCategoriesMap, transactions]);
+  }, [allCategoriesMap, showNotification, t, transactions]);
 
   const handleExportJson = useCallback(async () => {
     try {
@@ -301,15 +357,152 @@ const App: React.FC = () => {
   const handleImportJson = useCallback(async (file: File) => {
     try {
       const payload = parseImportFilePayload(JSON.parse(await file.text()) as unknown);
-      await api.importData({
+
+      if (payload.transactions.length === 0 && payload.categories.length === 0) {
+        showNotification(t('import_empty_error'), 'error');
+        return;
+      }
+
+      setImportPreview({
+        fileName: file.name,
         transactions: payload.transactions,
         categories: payload.categories,
       });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import data';
+      showNotification(message, 'error');
+    }
+  }, [showNotification, t]);
+
+  const buildAndShowStatementPreview = useCallback(async (
+    fileName: string,
+    parsed: ReturnType<typeof parseBankStatementCsv>,
+  ) => {
+    if (parsed.rows.length === 0 && parsed.errors.length === 0) {
+      showNotification(t('statement_import_empty_error'), 'error');
+      return;
+    }
+
+    const dates = parsed.rows.map(row => row.date).sort();
+    const existingTransactions = dates.length > 0
+      ? await api.fetchTransactions({
+        from: new Date(new Date(dates[0]).getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        to: new Date(new Date(dates[dates.length - 1]).getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+      : [];
+
+    setStatementImportPreview(buildStatementImportPreview(
+      fileName,
+      parsed,
+      existingTransactions,
+      allCategoriesMap,
+      allCategoryKeys,
+    ));
+  }, [allCategoriesMap, allCategoryKeys, showNotification, t]);
+
+  const handleImportStatementCsv = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const detection = detectCsvHeaders(text);
+
+      if (detection.headers.length === 0) {
+        showNotification(t('statement_import_empty_error'), 'error');
+        return;
+      }
+
+      const allFound = detection.dateIndex !== -1 && detection.descriptionIndex !== -1 && detection.amountIndex !== -1;
+      if (!allFound) {
+        // Headers not recognized — open mapping modal
+        setCsvMappingState({ rawText: text, fileName: file.name, headers: detection.headers, sampleRows: detection.sampleRows });
+        return;
+      }
+
+      const parsed = parseBankStatementCsv(text);
+      await buildAndShowStatementPreview(file.name, parsed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import statement';
+      showNotification(message, 'error');
+    }
+  }, [buildAndShowStatementPreview, showNotification, t]);
+
+  const handleCsvMappingConfirm = useCallback(async (mapping: CsvColumnMapping) => {
+    if (!csvMappingState) return;
+    try {
+      const parsed = parseBankStatementCsvWithMapping(csvMappingState.rawText, mapping);
+      setCsvMappingState(null);
+      await buildAndShowStatementPreview(csvMappingState.fileName, parsed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import statement';
+      showNotification(message, 'error');
+    }
+  }, [buildAndShowStatementPreview, csvMappingState, showNotification]);
+
+  const handleImportStatementOfx = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = parseOfxFile(text);
+
+      if (parsed.rows.length === 0 && parsed.errors.length === 0) {
+        showNotification(t('statement_import_empty_error'), 'error');
+        return;
+      }
+
+      if (parsed.rows.length === 0 && parsed.errors.length > 0) {
+        showNotification(t('ofx_parse_error'), 'error');
+        return;
+      }
+
+      await buildAndShowStatementPreview(file.name, parsed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import OFX file';
+      showNotification(message, 'error');
+    }
+  }, [buildAndShowStatementPreview, showNotification, t]);
+
+  const handleConfirmImport = useCallback(async () => {
+    if (!importPreview) {
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      await api.importData({
+        transactions: importPreview.transactions,
+        categories: importPreview.categories,
+      });
+      setImportPreview(null);
       showNotification(t('import_success'), 'success');
       fetchData();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to import data';
       showNotification(message, 'error');
+    } finally {
+      setIsImporting(false);
+    }
+  }, [fetchData, importPreview, showNotification, t]);
+
+  const handleConfirmStatementImport = useCallback(async (actions: StatementImportAction[]) => {
+    if (actions.length === 0) {
+      showNotification(t('statement_preview_nothing_selected'), 'error');
+      return;
+    }
+
+    setIsStatementImporting(true);
+    try {
+      const result = await api.applyStatementImportActions(actions);
+      setStatementImportPreview(null);
+      showNotification(
+        t('statement_import_success')
+          .replace('{updated}', String(result.updated.length))
+          .replace('{created}', String(result.created.length)),
+        'success',
+      );
+      fetchData();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to reconcile statement';
+      showNotification(message, 'error');
+    } finally {
+      setIsStatementImporting(false);
     }
   }, [fetchData, showNotification, t]);
 
@@ -317,6 +510,24 @@ const App: React.FC = () => {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--app-bg)]">
         <Spinner className="h-10 w-10 text-[var(--app-primary)]" />
+      </div>
+    );
+  }
+
+  if (bootstrappingError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--app-bg)] px-4">
+        <div className="w-full max-w-2xl">
+          <StatePanel
+            title={t('startup_error_title')}
+            description={bootstrappingError}
+            actionLabel={t('retry_action')}
+            onAction={() => {
+              setIsBootstrapping(true);
+              fetchBrand();
+            }}
+          />
+        </div>
       </div>
     );
   }
@@ -330,6 +541,7 @@ const App: React.FC = () => {
     { id: 'transactions', label: t('transactions'), Icon: CalendarIcon },
     { id: 'account', label: t('user_menu'), Icon: CogIcon },
   ];
+  const shouldBlockDataViews = Boolean(dataError && !isLoading && transactions.length === 0 && customCategories.length === 0);
 
   return (
     <div className="min-h-screen bg-[var(--app-bg)] px-4 pb-28 pt-6 text-[var(--app-text)] sm:px-6 sm:pb-12">
@@ -338,6 +550,17 @@ const App: React.FC = () => {
           brandSettings={brandSettings}
           user={user}
         />
+
+        {dataError && !shouldBlockDataViews ? (
+          <div className="mb-6">
+            <StatePanel
+              title={t('sync_error_title')}
+              description={dataError}
+              actionLabel={t('retry_action')}
+              onAction={fetchData}
+            />
+          </div>
+        ) : null}
 
         <div className="mb-6 hidden rounded-full border border-white/10 bg-slate-800/70 p-1 shadow-[0_18px_50px_rgba(15,23,42,0.28)] sm:flex">
           {tabs.map(({ id, label, Icon }) => (
@@ -363,38 +586,63 @@ const App: React.FC = () => {
           <div className="grid gap-6">
             {activeTab === 'summary' ? (
               <>
-                <Dashboard
-                  totalIncome={totals.totalIncome}
-                  totalExpenses={totals.totalExpenses}
-                  balance={totals.balance}
-                  upcomingCount={totals.upcomingCount}
-                />
-                <UpcomingBills
-                  transactions={transactions}
-                  onTogglePaidStatus={handleTogglePaidStatus}
-                  allCategoriesMap={allCategoriesMap}
-                />
-                <ExpenseChart transactions={transactions} allCategoriesMap={allCategoriesMap} />
+                {shouldBlockDataViews ? (
+                  <StatePanel
+                    title={t('sync_error_title')}
+                    description={dataError ?? t('startup_error_description')}
+                    actionLabel={t('retry_action')}
+                    onAction={fetchData}
+                  />
+                ) : (
+                  <>
+                    <Dashboard
+                      totalIncome={totals.totalIncome}
+                      totalExpenses={totals.totalExpenses}
+                      balance={totals.balance}
+                      upcomingCount={totals.upcomingCount}
+                    />
+                    <UpcomingBills
+                      transactions={transactions}
+                      onTogglePaidStatus={handleTogglePaidStatus}
+                      allCategoriesMap={allCategoriesMap}
+                    />
+                    <ExpenseChart transactions={transactions} allCategoriesMap={allCategoriesMap} />
+                  </>
+                )}
               </>
             ) : null}
 
             {activeTab === 'transactions' ? (
-              <TransactionList
-                transactions={transactions}
-                filters={filters}
-                onFiltersChange={setFilters}
-                onEdit={(id) => {
-                  const transaction = transactions.find(item => item.id === id) ?? null;
-                  setEditingTransaction(transaction);
-                  setIsModalOpen(true);
-                }}
-                onDelete={handleDeleteTransaction}
-                onOpenCategoryModal={() => setIsCategoryModalOpen(true)}
-                onExportCsv={handleExportCsv}
-                onExportJson={handleExportJson}
-                onImportJson={handleImportJson}
-                allCategoriesMap={allCategoriesMap}
-              />
+              shouldBlockDataViews ? (
+                <StatePanel
+                  title={t('sync_error_title')}
+                  description={dataError ?? t('startup_error_description')}
+                  actionLabel={t('retry_action')}
+                  onAction={fetchData}
+                />
+              ) : (
+                <TransactionList
+                  transactions={transactions}
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                  onEdit={(id) => {
+                    const transaction = transactions.find(item => item.id === id) ?? null;
+                    setEditingTransaction(transaction);
+                    setIsModalOpen(true);
+                  }}
+                  onDelete={handleDeleteTransaction}
+                  onOpenCategoryModal={() => setIsCategoryModalOpen(true)}
+                  onExportCsv={handleExportCsv}
+                  onExportJson={handleExportJson}
+                  onImportJson={handleImportJson}
+                  onImportStatementCsv={handleImportStatementCsv}
+                  onImportStatementOfx={handleImportStatementOfx}
+                  onResetFilters={() => setFilters(defaultCurrentMonthFilters)}
+                  onDeleteMany={handleDeleteTransactions}
+                  onTogglePaidMany={handleTogglePaidMany}
+                  allCategoriesMap={allCategoriesMap}
+                />
+              )
             ) : null}
 
             {activeTab === 'account' ? (
@@ -578,6 +826,40 @@ const App: React.FC = () => {
           onCopyInvite={handleCopyInvite}
         />
       ) : null}
+
+      <ImportPreviewModal
+        isOpen={Boolean(importPreview)}
+        preview={importPreview}
+        isSubmitting={isImporting}
+        onClose={() => {
+          if (!isImporting) {
+            setImportPreview(null);
+          }
+        }}
+        onConfirm={handleConfirmImport}
+        allCategoriesMap={allCategoriesMap}
+      />
+
+      <StatementImportPreviewModal
+        isOpen={Boolean(statementImportPreview)}
+        preview={statementImportPreview}
+        isSubmitting={isStatementImporting}
+        onClose={() => {
+          if (!isStatementImporting) {
+            setStatementImportPreview(null);
+          }
+        }}
+        onConfirm={handleConfirmStatementImport}
+        allCategoriesMap={allCategoriesMap}
+      />
+
+      <CsvColumnMappingModal
+        isOpen={Boolean(csvMappingState)}
+        headers={csvMappingState?.headers ?? []}
+        sampleRows={csvMappingState?.sampleRows ?? []}
+        onConfirm={handleCsvMappingConfirm}
+        onClose={() => setCsvMappingState(null)}
+      />
     </div>
   );
 };

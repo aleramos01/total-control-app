@@ -4,8 +4,11 @@ import { useLanguage } from '../LanguageContext';
 import ConfirmationDialog from './ConfirmationDialog';
 import { ExportIcon } from './icons/ExportIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
+import { CheckIcon } from './icons/CheckIcon';
+import { TrashIcon } from './icons/TrashIcon';
 import TransactionGroup from './TransactionGroup';
-import { extractDateInputValue, formatMonthGroupLabel, toStoredDate, toStoredDateEnd } from '../lib/transactions';
+import StatePanel from './StatePanel';
+import { extractDateInputValue, formatDatePtBr, formatMonthGroupLabel, hasActiveTransactionFilters, toStoredDate, toStoredDateEnd } from '../lib/transactions';
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -17,6 +20,11 @@ interface TransactionListProps {
   onExportCsv: () => void;
   onExportJson: () => void;
   onImportJson: (file: File) => void;
+  onImportStatementCsv: (file: File) => void;
+  onImportStatementOfx: (file: File) => void;
+  onResetFilters: () => void;
+  onDeleteMany: (ids: string[]) => void;
+  onTogglePaidMany: (ids: string[], isPaid: boolean) => void;
   allCategoriesMap: { [key: string]: { name: string; color: string } };
 }
 
@@ -30,16 +38,27 @@ const TransactionList: React.FC<TransactionListProps> = ({
   onExportCsv,
   onExportJson,
   onImportJson,
+  onImportStatementCsv,
+  onImportStatementOfx,
+  onResetFilters,
+  onDeleteMany,
+  onTogglePaidMany,
   allCategoriesMap,
 }) => {
   const { t, formatCurrency, locale } = useLanguage();
   const [transactionToDelete, setTransactionToDelete] = React.useState<Transaction | null>(null);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmDeleteMany, setConfirmDeleteMany] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [draftFrom, setDraftFrom] = useState(extractDateInputValue(filters.from));
   const [draftTo, setDraftTo] = useState(extractDateInputValue(filters.to));
   const importRef = useRef<HTMLInputElement>(null);
+  const statementImportRef = useRef<HTMLInputElement>(null);
+  const ofxImportRef = useRef<HTMLInputElement>(null);
 
   const categories = useMemo(() => Object.entries(allCategoriesMap), [allCategoriesMap]);
+  const hasActiveFilters = useMemo(() => hasActiveTransactionFilters(filters), [filters]);
   const groupedTransactions = useMemo(() => {
     const groups = new Map<string, Transaction[]>();
 
@@ -57,17 +76,104 @@ const TransactionList: React.FC<TransactionListProps> = ({
     });
   }, [transactions]);
   const totalVisible = useMemo(() => transactions.reduce((sum, transaction) => sum + transaction.amount, 0), [transactions]);
-
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedTransactions = useMemo(
+    () => transactions.filter(transaction => selectedIdSet.has(transaction.id)),
+    [selectedIdSet, transactions],
+  );
+  const selectedExpenseIds = useMemo(
+    () => selectedTransactions.filter(transaction => transaction.type === 'expense').map(transaction => transaction.id),
+    [selectedTransactions],
+  );
+  const hasMixedSelection = useMemo(
+    () => selectedTransactions.some(transaction => transaction.type !== 'expense'),
+    [selectedTransactions],
+  );
   const periodPresets: Array<{ id: NonNullable<TransactionFilters['preset']>; label: string }> = [
     { id: 'current_month', label: t('current_month') },
     { id: 'previous_month', label: t('previous_month') },
     { id: 'next_30_days', label: t('next_30_days') },
     { id: 'overdue', label: t('overdue') },
   ];
+  const activeFilterBadges = useMemo(() => {
+    const badges: Array<{ key: string; label: string; onRemove: () => void }> = [];
+
+    if (filters.q) {
+      badges.push({
+        key: 'q',
+        label: `${t('search')}: ${filters.q}`,
+        onRemove: () => onFiltersChange(current => ({ ...current, q: undefined })),
+      });
+    }
+
+    if (filters.type) {
+      badges.push({
+        key: 'type',
+        label: `${t('type')}: ${filters.type === 'income' ? t('income') : t('expenses')}`,
+        onRemove: () => onFiltersChange(current => ({ ...current, type: '' })),
+      });
+    }
+
+    if (filters.category) {
+      badges.push({
+        key: 'category',
+        label: `${t('category')}: ${allCategoriesMap[filters.category]?.name ?? filters.category}`,
+        onRemove: () => onFiltersChange(current => ({ ...current, category: undefined })),
+      });
+    }
+
+    if (filters.status) {
+      badges.push({
+        key: 'status',
+        label: `${t('status')}: ${filters.status === 'paid' ? t('paid') : t('unpaid')}`,
+        onRemove: () => onFiltersChange(current => ({ ...current, status: '' })),
+      });
+    }
+
+    if (filters.preset && filters.preset !== 'current_month') {
+      const preset = periodPresets.find(item => item.id === filters.preset);
+      if (preset) {
+        badges.push({
+          key: 'preset',
+          label: `${t('period_presets')}: ${preset.label}`,
+          onRemove: () => onFiltersChange(current => ({ ...current, preset: '' })),
+        });
+      }
+    }
+
+    if (filters.from) {
+      badges.push({
+        key: 'from',
+        label: `${t('from')}: ${formatDatePtBr(filters.from)}`,
+        onRemove: () => {
+          setDraftFrom('');
+          onFiltersChange(current => ({ ...current, from: undefined }));
+        },
+      });
+    }
+
+    if (filters.to) {
+      badges.push({
+        key: 'to',
+        label: `${t('to')}: ${formatDatePtBr(filters.to)}`,
+        onRemove: () => {
+          setDraftTo('');
+          onFiltersChange(current => ({ ...current, to: undefined }));
+        },
+      });
+    }
+
+    return badges;
+  }, [allCategoriesMap, filters, onFiltersChange, periodPresets, t]);
 
   const syncDraftDates = (nextFilters: TransactionFilters) => {
     setDraftFrom(extractDateInputValue(nextFilters.from));
     setDraftTo(extractDateInputValue(nextFilters.to));
+  };
+
+  const resetSelection = () => {
+    setSelectedIds([]);
+    setIsSelectionMode(false);
   };
 
   const applyDateRange = () => {
@@ -77,6 +183,14 @@ const TransactionList: React.FC<TransactionListProps> = ({
       to: draftTo ? toStoredDateEnd(draftTo) : undefined,
       preset: draftFrom || draftTo ? '' : current.preset,
     }));
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+  };
+
+  const selectAllVisible = () => {
+    setSelectedIds(transactions.map(transaction => transaction.id));
   };
 
   return (
@@ -97,6 +211,19 @@ const TransactionList: React.FC<TransactionListProps> = ({
             <ChevronDownIcon className={`h-4 w-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
           </button>
           <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className={`button-secondary !rounded-full !px-3 !py-2 ${isSelectionMode ? '!border-cyan-400/40 !bg-cyan-500/10 !text-cyan-100' : ''}`}
+              onClick={() => {
+                if (isSelectionMode) {
+                  resetSelection();
+                  return;
+                }
+                setIsSelectionMode(true);
+              }}
+            >
+              {isSelectionMode ? t('cancel_selection') : t('select_transactions')}
+            </button>
             <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={onOpenCategoryModal}>{t('categories')}</button>
             <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={onExportCsv}>
               <ExportIcon className="h-4 w-4" />
@@ -104,6 +231,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
             </button>
             <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={onExportJson}>{t('export_json')}</button>
             <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={() => importRef.current?.click()}>{t('import_json')}</button>
+            <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={() => statementImportRef.current?.click()}>{t('import_statement_csv')}</button>
+            <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={() => ofxImportRef.current?.click()}>{t('import_statement_ofx')}</button>
           </div>
           <input
             ref={importRef}
@@ -118,8 +247,49 @@ const TransactionList: React.FC<TransactionListProps> = ({
               event.target.value = '';
             }}
           />
+          <input
+            ref={statementImportRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={event => {
+              const file = event.target.files?.[0];
+              if (file) {
+                onImportStatementCsv(file);
+              }
+              event.target.value = '';
+            }}
+          />
+          <input
+            ref={ofxImportRef}
+            type="file"
+            accept=".ofx,.qfx,application/x-ofx"
+            className="hidden"
+            onChange={event => {
+              const file = event.target.files?.[0];
+              if (file) {
+                onImportStatementOfx(file);
+              }
+              event.target.value = '';
+            }}
+          />
         </div>
       </div>
+
+      {hasActiveFilters ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {activeFilterBadges.map(badge => (
+            <button
+              key={badge.key}
+              type="button"
+              onClick={badge.onRemove}
+              className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-[var(--app-primary)]"
+            >
+              {badge.label} ×
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {showFilters ? (
         <div className="mb-5 grid gap-3 rounded-[24px] border border-white/10 bg-slate-900/55 p-4 md:grid-cols-2 xl:grid-cols-5">
@@ -135,17 +305,16 @@ const TransactionList: React.FC<TransactionListProps> = ({
                       ? 'border-[var(--app-primary)] bg-[var(--app-primary)]/15 text-slate-50'
                       : 'border-white/10 bg-slate-950/50 text-slate-400'
                   }`}
-                  onClick={() => onFiltersChange(current => ({
-                    ...current,
-                    preset: current.preset === preset.id ? '' : preset.id,
-                    from: undefined,
-                    to: undefined,
-                  })) || syncDraftDates({
-                    ...filters,
-                    preset: filters.preset === preset.id ? '' : preset.id,
-                    from: undefined,
-                    to: undefined,
-                  })}
+                  onClick={() => {
+                    const nextPreset = filters.preset === preset.id ? '' : preset.id;
+                    syncDraftDates({ preset: nextPreset });
+                    onFiltersChange(current => ({
+                      ...current,
+                      preset: nextPreset,
+                      from: undefined,
+                      to: undefined,
+                    }));
+                  }}
                 >
                   {preset.label}
                 </button>
@@ -204,10 +373,59 @@ const TransactionList: React.FC<TransactionListProps> = ({
         </div>
       ) : null}
 
-      {transactions.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/40 px-4 py-8 text-center text-slate-400">
-          {t('no_transactions')}
+      {isSelectionMode ? (
+        <div className="mb-5 rounded-[24px] border border-cyan-400/20 bg-cyan-500/8 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-100">
+                {t('selected_transactions_count').replace('{count}', String(selectedIds.length))}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                {hasMixedSelection ? t('bulk_paid_only_for_expenses') : t('bulk_actions_helper')}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={selectAllVisible}>
+                {t('select_all_visible')}
+              </button>
+              <button
+                type="button"
+                className="button-secondary !rounded-full !px-3 !py-2"
+                disabled={selectedExpenseIds.length === 0 || hasMixedSelection}
+                onClick={() => onTogglePaidMany(selectedExpenseIds, true)}
+              >
+                <CheckIcon className="h-4 w-4" />
+                {t('mark_selected_paid')}
+              </button>
+              <button
+                type="button"
+                className="button-secondary !rounded-full !px-3 !py-2"
+                disabled={selectedExpenseIds.length === 0 || hasMixedSelection}
+                onClick={() => onTogglePaidMany(selectedExpenseIds, false)}
+              >
+                {t('mark_selected_unpaid')}
+              </button>
+              <button
+                type="button"
+                className="button-secondary !rounded-full !px-3 !py-2 !text-rose-200"
+                disabled={selectedIds.length === 0}
+                onClick={() => setConfirmDeleteMany(true)}
+              >
+                <TrashIcon className="h-4 w-4" />
+                {t('delete_selected')}
+              </button>
+            </div>
+          </div>
         </div>
+      ) : null}
+
+      {transactions.length === 0 ? (
+        <StatePanel
+          title={hasActiveFilters ? t('no_transactions_filtered') : t('no_transactions_yet')}
+          description={hasActiveFilters ? t('no_transactions_filtered_helper') : t('no_transactions_yet_helper')}
+          actionLabel={hasActiveFilters ? t('clear_filters') : undefined}
+          onAction={hasActiveFilters ? onResetFilters : undefined}
+        />
       ) : (
         <div className="space-y-3">
           {groupedTransactions.map(([monthKey, grouped]) => (
@@ -223,6 +441,9 @@ const TransactionList: React.FC<TransactionListProps> = ({
                 }
               }}
               allCategoriesMap={allCategoriesMap}
+              selectionMode={isSelectionMode}
+              selectedIds={selectedIdSet}
+              onToggleSelect={toggleSelection}
             />
           ))}
           <p className="px-2 text-xs uppercase tracking-[0.16em] text-slate-500">
@@ -245,6 +466,22 @@ const TransactionList: React.FC<TransactionListProps> = ({
           confirmButtonVariant="danger"
         />
       )}
+
+      {confirmDeleteMany ? (
+        <ConfirmationDialog
+          isOpen={confirmDeleteMany}
+          onClose={() => setConfirmDeleteMany(false)}
+          onConfirm={() => {
+            onDeleteMany(selectedIds);
+            setConfirmDeleteMany(false);
+            resetSelection();
+          }}
+          title={t('confirm_delete_many_title')}
+          message={t('confirm_delete_many_message').replace('{count}', String(selectedIds.length))}
+          confirmButtonText={t('delete_selected')}
+          confirmButtonVariant="danger"
+        />
+      ) : null}
     </section>
   );
 };
