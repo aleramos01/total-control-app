@@ -315,7 +315,7 @@ export function parseBankStatementCsvWithMapping(text: string, mapping: CsvColum
     const description = (cells[descriptionIndex] ?? '').trim();
     const signedAmount = parseStatementAmount(cells[amountIndex] ?? '');
 
-    if (!date || !description || signedAmount === null || signedAmount === 0) {
+    if (!date || !description || signedAmount === null) {
       errors.push({ lineNumber, message: 'Linha sem data, descricao ou valor valido', raw: cells.join(',') });
       return;
     }
@@ -375,11 +375,10 @@ function getDescriptionSimilarity(left: string, right: string) {
 }
 
 function isLikelyAlreadyImported(transaction: Transaction) {
-  if (transaction.notes?.includes(DUPLICATE_IMPORTED_NOTE)) {
-    return true;
-  }
-
-  return transaction.type === TransactionType.EXPENSE && Boolean(transaction.isPaid);
+  // Only treat as already-imported when the transaction carries the explicit import marker.
+  // Relying on isPaid===true as a heuristic causes false positives: manually-paid expenses
+  // would be silently skipped during import even if they were never imported from a statement.
+  return Boolean(transaction.notes?.includes(DUPLICATE_IMPORTED_NOTE));
 }
 
 function buildCandidates(row: BankStatementRow, transactions: Transaction[]): StatementImportCandidate[] {

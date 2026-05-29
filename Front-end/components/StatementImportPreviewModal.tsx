@@ -209,7 +209,7 @@ const StatementImportPreviewModal: React.FC<StatementImportPreviewModalProps> = 
       const state = rowStates[tr.key];
       if (!state?.selected) return;
 
-      if (tr.kind === 'match' && tr.matchTransactionId) {
+      if (tr.kind === 'match' && tr.matchTransactionId != null && tr.matchTransactionId !== '') {
         actions.push({
           type: 'update',
           transactionId: tr.matchTransactionId,

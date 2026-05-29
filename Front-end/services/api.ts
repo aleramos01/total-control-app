@@ -460,18 +460,18 @@ export async function importData(payload: Pick<ExportPayload, 'transactions' | '
 
 export async function applyStatementImportActions(actions: StatementImportAction[]): Promise<StatementImportApplyResult> {
   const authUser = await getSessionUser();
-  const updated: Transaction[] = [];
-  const created: Transaction[] = [];
 
-  for (const action of actions) {
-    if (action.type === 'update') {
+  const updateActions = actions.filter((a): a is Extract<StatementImportAction, { type: 'update' }> => a.type === 'update');
+  const createActions = actions.filter((a): a is Extract<StatementImportAction, { type: 'create' }> => a.type === 'create');
+
+  // Run all updates in parallel (one call per row, but concurrent instead of sequential)
+  const updatedRows = await Promise.all(
+    updateActions.map(async action => {
       const payload: { amount: number; updated_at: string; is_paid?: boolean } = {
         amount: action.amount,
         updated_at: new Date().toISOString(),
       };
-      if (action.isPaid !== undefined) {
-        payload.is_paid = action.isPaid;
-      }
+      if (action.isPaid !== undefined) payload.is_paid = action.isPaid;
 
       const { data, error } = await supabase
         .from('transactions')
@@ -480,23 +480,24 @@ export async function applyStatementImportActions(actions: StatementImportAction
         .select('*')
         .single();
 
-      updated.push(mapTransactionRow(ensureResult(data as DbTransactionRow | null, error, 'Failed to reconcile transaction')));
-    } else {
-      const rows = buildTransactionInsertRows(authUser.id, action.transaction);
-      const { data, error } = await supabase
-        .from('transactions')
-        .insert(rows)
-        .select('*');
+      return mapTransactionRow(ensureResult(data as DbTransactionRow | null, error, 'Failed to reconcile transaction'));
+    }),
+  );
 
-      if (error) {
-        throw new Error(error.message || 'Failed to create imported transaction');
-      }
+  // Bulk-insert all new transactions in a single DB call
+  const createdRows: Transaction[] = [];
+  if (createActions.length > 0) {
+    const insertRows = createActions.flatMap(action => buildTransactionInsertRows(authUser.id, action.transaction));
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert(insertRows)
+      .select('*');
 
-      created.push(...(((data as DbTransactionRow[] | null) ?? []).map(mapTransactionRow)));
-    }
+    if (error) throw new Error(error.message || 'Failed to create imported transactions');
+    createdRows.push(...((data as DbTransactionRow[] | null) ?? []).map(mapTransactionRow));
   }
 
-  return { updated, created };
+  return { updated: updatedRows, created: createdRows };
 }
 
 export async function createInvite(expiresInDays?: number): Promise<InviteInfo> {

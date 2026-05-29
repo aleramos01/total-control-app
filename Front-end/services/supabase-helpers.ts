@@ -131,7 +131,13 @@ export function mapTransactionRow(row: DbTransactionRow): Transaction {
     id: row.id,
     description: row.description,
     amount: Number(row.amount),
-    date: new Date(row.transaction_date).toISOString(),
+    // Parse date-only strings (YYYY-MM-DD) explicitly as UTC midnight to avoid
+    // timezone-driven shifts. new Date('YYYY-MM-DD') is spec-compliant UTC, but
+    // the explicit form makes the intent clear and future-proofs against server
+    // rows that may include a bare local timestamp without a Z suffix.
+    date: /^\d{4}-\d{2}-\d{2}$/.test(row.transaction_date)
+      ? `${row.transaction_date}T00:00:00.000Z`
+      : new Date(row.transaction_date).toISOString(),
     type: row.type,
     category: row.category_key,
     scheduleType: row.schedule_type,

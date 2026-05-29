@@ -22,12 +22,19 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const accountBalances = useMemo(() => {
     if (accounts.length === 0) return [];
-    return accounts.map(acc => {
-      const net = transactions
-        .filter(tx => tx.accountId === acc.id)
-        .reduce((sum, tx) => sum + (tx.type === TransactionType.INCOME ? tx.amount : -tx.amount), 0);
-      return { ...acc, currentBalance: acc.initialBalance + net };
-    });
+
+    // Pre-index transactions by accountId (O(n)) so per-account lookup is O(1)
+    const netByAccount = new Map<string, number>();
+    for (const tx of transactions) {
+      if (!tx.accountId) continue;
+      const delta = tx.type === TransactionType.INCOME ? tx.amount : -tx.amount;
+      netByAccount.set(tx.accountId, (netByAccount.get(tx.accountId) ?? 0) + delta);
+    }
+
+    return accounts.map(acc => ({
+      ...acc,
+      currentBalance: acc.initialBalance + (netByAccount.get(acc.id) ?? 0),
+    }));
   }, [accounts, transactions]);
 
   const cards = [

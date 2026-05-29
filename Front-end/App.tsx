@@ -141,7 +141,10 @@ const App: React.FC = () => {
       const [transactionsData, categoriesData, accountsData] = await Promise.all([
         api.fetchTransactions(filters),
         api.fetchCustomCategories(),
-        api.fetchAccounts().catch(() => [] as Account[]),
+        api.fetchAccounts().catch((err: unknown) => {
+          console.error('[fetchAccounts] failed:', err);
+          return [] as Account[];
+        }),
       ]);
       setTransactions(transactionsData);
       setCustomCategories(categoriesData);
