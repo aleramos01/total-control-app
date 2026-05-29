@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTransactionQuery, buildTransactionsCsv, formatDatePtBr, getUpcomingBills, parseDatePtBr, parseStoredDate, suggestCategoryFromDescription, toStoredDate, toStoredDateEnd } from '../lib/transactions.js';
+import {
+  buildTransactionQuery,
+  buildTransactionsCsv,
+  buildTransactionsCsvFilename,
+  formatDatePtBr,
+  getUpcomingBills,
+  hasActiveTransactionFilters,
+  parseDatePtBr,
+  parseStoredDate,
+  stripInstallmentSuffix,
+  suggestCategoryFromDescription,
+  toStoredDate,
+  toStoredDateEnd,
+} from '../lib/transactions.js';
 import { TransactionType, type Transaction } from '../types.js';
 
 test('buildTransactionQuery only serializes filled filters', () => {
@@ -36,17 +49,29 @@ test('buildTransactionQuery preserves manual date ranges together with other fil
   assert.match(query, /to=2026-02-28T23%3A59%3A59.999Z/);
 });
 
-test('buildTransactionsCsv escapes quotes and resolves category labels', () => {
+test('hasActiveTransactionFilters ignores the default current month preset', () => {
+  assert.equal(hasActiveTransactionFilters({ preset: 'current_month' }), false);
+  assert.equal(hasActiveTransactionFilters({ q: 'mercado', preset: 'current_month' }), true);
+  assert.equal(hasActiveTransactionFilters({ preset: 'overdue' }), true);
+});
+
+test('buildTransactionsCsv formats export columns, dates and escaped values', () => {
   const csv = buildTransactionsCsv(
     [
       {
         id: 'txn_1',
-        description: 'Plano "Pro"',
+        description: 'Plano "Pro", anual',
         amount: 99.9,
         date: '2026-01-10T00:00:00.000Z',
         type: TransactionType.EXPENSE,
         category: 'subscriptions',
+        scheduleType: 'installment',
+        seriesId: 'series_1',
+        installmentIndex: 2,
+        installmentCount: 3,
+        dueDate: '2026-01-15T00:00:00.000Z',
         isPaid: false,
+        notes: 'Renovar "manual"',
       },
     ],
     {
@@ -54,8 +79,18 @@ test('buildTransactionsCsv escapes quotes and resolves category labels', () => {
     }
   );
 
-  assert.match(csv, /"Plano ""Pro"""/);
+  assert.match(csv, /^"id","description","amount","date","type","category","scheduleType","seriesId","installmentIndex","installmentCount","dueDate","status","notes"/);
+  assert.match(csv, /"Plano ""Pro"", anual"/);
   assert.match(csv, /"Assinaturas"/);
+  assert.match(csv, /"99.90","2026-01-10"/);
+  assert.match(csv, /"installment","series_1","2","3","2026-01-15","unpaid","Renovar ""manual"""/);
+});
+
+test('buildTransactionsCsvFilename includes the export date', () => {
+  assert.equal(
+    buildTransactionsCsvFilename(new Date('2026-05-18T12:00:00.000Z')),
+    'total-control-transactions-2026-05-18.csv',
+  );
 });
 
 test('getUpcomingBills keeps recurring expenses due within 30 days sorted by nearest due date', () => {
@@ -114,6 +149,11 @@ test('parseStoredDate preserves the day portion of stored ISO strings', () => {
   assert.equal(parsed.getFullYear(), 2026);
   assert.equal(parsed.getMonth(), 0);
   assert.equal(parsed.getDate(), 8);
+});
+
+test('stripInstallmentSuffix removes trailing installment labels for editing', () => {
+  assert.equal(stripInstallmentSuffix('Notebook (2/3)'), 'Notebook');
+  assert.equal(stripInstallmentSuffix('Internet fixa'), 'Internet fixa');
 });
 
 test('formatDatePtBr converts stored ISO dates to Brazilian format', () => {

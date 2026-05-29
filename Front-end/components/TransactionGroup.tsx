@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Transaction, TransactionType } from '../types';
 import TransactionItem from './TransactionItem';
 import { useLanguage } from '../LanguageContext';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
+
+const INITIAL_VISIBLE_TRANSACTIONS = 75;
+const VISIBLE_TRANSACTIONS_STEP = 75;
 
 interface TransactionGroupProps {
   title: string;
@@ -10,11 +13,29 @@ interface TransactionGroupProps {
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   allCategoriesMap: { [key: string]: { name: string; color: string } };
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 
-const TransactionGroup: React.FC<TransactionGroupProps> = ({ title, transactions, onEdit, onDelete, allCategoriesMap }) => {
+const TransactionGroup: React.FC<TransactionGroupProps> = ({
+  title,
+  transactions,
+  onEdit,
+  onDelete,
+  allCategoriesMap,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
+}) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_TRANSACTIONS);
   const { t, formatCurrency } = useLanguage();
+  const sortedTransactions = useMemo(() => {
+    return [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions]);
+  const visibleTransactions = sortedTransactions.slice(0, visibleCount);
+  const hiddenCount = Math.max(sortedTransactions.length - visibleTransactions.length, 0);
 
   if (transactions.length === 0) {
     return null;
@@ -57,18 +78,28 @@ const TransactionGroup: React.FC<TransactionGroupProps> = ({ title, transactions
       
       {isOpen && (
         <div className="px-4 pb-2 space-y-2">
-          {transactions
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-            .map(transaction => (
-              <TransactionItem
-                key={transaction.id}
-                transaction={transaction}
-                onEdit={onEdit}
-                onDelete={onDelete}
-                allCategoriesMap={allCategoriesMap}
-                isGrouped={true}
-              />
-            ))}
+          {visibleTransactions.map(transaction => (
+            <TransactionItem
+              key={transaction.id}
+              transaction={transaction}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              allCategoriesMap={allCategoriesMap}
+              isGrouped={true}
+              selectionMode={selectionMode}
+              isSelected={selectedIds?.has(transaction.id) ?? false}
+              onToggleSelect={onToggleSelect}
+            />
+          ))}
+          {hiddenCount > 0 ? (
+            <button
+              type="button"
+              className="button-secondary my-3 w-full justify-center"
+              onClick={() => setVisibleCount(current => current + VISIBLE_TRANSACTIONS_STEP)}
+            >
+              {t('load_more_transactions').replace('{count}', String(Math.min(hiddenCount, VISIBLE_TRANSACTIONS_STEP)))}
+            </button>
+          ) : null}
         </div>
       )}
     </div>

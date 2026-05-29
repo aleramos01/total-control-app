@@ -199,6 +199,10 @@ export function extractDateInputValue(value?: string) {
   return value ? value.slice(0, 10) : '';
 }
 
+export function stripInstallmentSuffix(value: string) {
+  return value.replace(/\s\(\d+\/\d+\)$/, '');
+}
+
 export function formatDatePtBr(value?: string) {
   if (!value) {
     return '';
@@ -262,6 +266,18 @@ export function buildTransactionQuery(filters: TransactionFilters) {
   return result ? `?${result}` : '';
 }
 
+export function hasActiveTransactionFilters(filters: TransactionFilters) {
+  return Boolean(
+    filters.q
+    || filters.type
+    || filters.category
+    || filters.status
+    || filters.from
+    || filters.to
+    || (filters.preset && filters.preset !== 'current_month')
+  );
+}
+
 export function addMonthsToStoredDate(value: string, months: number) {
   const date = parseStoredDate(value);
   date.setMonth(date.getMonth() + months);
@@ -321,16 +337,39 @@ export function buildTransactionsCsv(
     transaction.id,
     transaction.description,
     transaction.amount.toFixed(2),
-    transaction.date,
+    extractDateInputValue(transaction.date),
     transaction.type,
     categoryMap[transaction.category]?.name || transaction.category,
-    transaction.dueDate ?? '',
+    transaction.scheduleType ?? 'once',
+    transaction.seriesId ?? '',
+    transaction.installmentIndex ?? '',
+    transaction.installmentCount ?? '',
+    extractDateInputValue(transaction.dueDate ?? ''),
     transaction.isPaid ? 'paid' : 'unpaid',
+    transaction.notes ?? '',
   ]);
 
-  return [['id', 'description', 'amount', 'date', 'type', 'category', 'dueDate', 'status'], ...rows]
+  return [[
+    'id',
+    'description',
+    'amount',
+    'date',
+    'type',
+    'category',
+    'scheduleType',
+    'seriesId',
+    'installmentIndex',
+    'installmentCount',
+    'dueDate',
+    'status',
+    'notes',
+  ], ...rows]
     .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
     .join('\n');
+}
+
+export function buildTransactionsCsvFilename(exportedAt = new Date()) {
+  return `total-control-transactions-${exportedAt.toISOString().slice(0, 10)}.csv`;
 }
 
 export interface UpcomingBill extends Transaction {

@@ -20,12 +20,18 @@
     "supabase:reset": "npx supabase db reset",
     "supabase:status": "npx supabase status",
     "supabase:env": "node scripts/sync-supabase-env.mjs",
+    "smoke:prod": "node scripts/smoke-production.mjs",
+    "check:back:postgres": "node scripts/require-local-postgres.mjs",
     "build:front": "npm --prefix Front-end run build",
     "build:back": "npm --prefix backend run build",
     "build": "npm run build:back && npm run build:front",
     "test:front": "npm --prefix Front-end run test",
+    "test:back:unit": "npm --prefix backend run test:unit",
+    "test:back:integration": "npm run check:back:postgres && npm --prefix backend run test:integration",
     "test:back": "npm --prefix backend run test",
-    "test": "npm run test:back && npm run test:front",
-    "verify": "npm run test && npm run build"
+    "test": "npm run test:back:unit && npm run test:front",
+    "test:full": "npm run test && npm run test:back:integration",
+    "verify": "npm run test && npm run build",
+    "verify:full": "npm run test:full && npm run build"
   }
 }

@@ -5,6 +5,7 @@ import { useNotification } from '../NotificationContext';
 import Spinner from './Spinner';
 import { BrandSettings } from '../types';
 import * as api from '../services/api';
+import StatePanel from './StatePanel';
 
 interface AuthPageProps {
   brandSettings: BrandSettings;
@@ -19,6 +20,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthStatusLoading, setIsAuthStatusLoading] = useState(true);
+  const [authStatusError, setAuthStatusError] = useState<string | null>(null);
   const [publicRegistrationOpen, setPublicRegistrationOpen] = useState(false);
   const { login, register, registerWithInvite } = useAuth();
   const { showNotification } = useNotification();
@@ -32,6 +34,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
 
     const loadAuthStatus = async () => {
       setIsAuthStatusLoading(true);
+      setAuthStatusError(null);
       try {
         const status = await api.fetchAuthStatus();
         if (!isMounted) {
@@ -46,6 +49,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
         console.error(error);
         if (isMounted) {
           setPublicRegistrationOpen(false);
+          setAuthStatusError(error instanceof Error ? error.message : t('auth_status_failed'));
         }
       } finally {
         if (isMounted) {
@@ -59,7 +63,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [t]);
 
   const modeOptions: Array<{ id: 'login' | 'register' | 'invite'; label: string }> = useMemo(() => ([
     { id: 'login', label: t('login_button') },
@@ -171,6 +175,34 @@ const AuthPage: React.FC<AuthPageProps> = ({ brandSettings }) => {
               {authModeMessage}
             </p>
           </div>
+
+          {authStatusError ? (
+            <div className="mb-6">
+              <StatePanel
+                title={t('sync_error_title')}
+                description={authStatusError}
+                actionLabel={t('retry_action')}
+                onAction={() => {
+                  setIsAuthStatusLoading(true);
+                  setAuthStatusError(null);
+                  void api.fetchAuthStatus()
+                    .then(status => {
+                      setPublicRegistrationOpen(status.publicRegistrationOpen);
+                      if (!status.publicRegistrationOpen) {
+                        setMode(current => current === 'register' ? 'login' : current);
+                      }
+                    })
+                    .catch(error => {
+                      setPublicRegistrationOpen(false);
+                      setAuthStatusError(error instanceof Error ? error.message : t('auth_status_failed'));
+                    })
+                    .finally(() => {
+                      setIsAuthStatusLoading(false);
+                    });
+                }}
+              />
+            </div>
+          ) : null}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {(isInviteMode || isRegisterMode) && (

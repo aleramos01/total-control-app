@@ -6,6 +6,35 @@ Este roadmap organiza o estado atual do produto, o que ja foi entregue, o que pr
 
 O produto ja possui um MVP funcional, com frontend, backend, autenticacao, persistencia, configuracoes e operacoes financeiras centrais. A partir daqui, a evolucao precisa priorizar estabilidade, experiencia de uso e preparo para operacao real.
 
+## Regra de manutencao
+
+Toda tarefa concluida no projeto deve atualizar este arquivo para refletir:
+
+- o que acabou de ser entregue
+- o que mudou na prioridade seguinte
+- o impacto no estado atual do produto
+
+## Atualizacao mais recente
+
+- Baseline rapido validado com `npm run verify`
+- Testes de integracao do backend legado agora falham com mensagem operacional explicita quando o Postgres local nao esta acessivel
+- Documentacao de release e smoke test consolidada para o caminho oficial `Vercel + Supabase`
+- Smoke test automatizado da publicacao atual adicionado para validar homepage, `auth-status` e branding em producao
+- Correção de escopo: tela de `app settings` ja esta entregue e sai da lista de pendencias do `v0.2`
+- Exportacao CSV do fluxo oficial concluida com dados filtrados, datas normalizadas e metadados de transacao
+- Lista de transacoes passou a renderizar grupos mensais grandes de forma progressiva, evitando abrir centenas de itens de uma vez
+- Importacao de extrato bancario CSV adicionada com preview obrigatorio, conciliacao automatica segura e criacao de lancamentos novos
+
+Impacto imediato:
+
+- o baseline tecnico ficou validado para mudancas sem dependencia de banco legado
+- a pendencia de `v0.2` deixou de ser a interface de configuracoes e passou a ser validacao, release e cobertura dos fluxos criticos
+- o fluxo oficial de producao agora tem verificacao automatizada minima
+- o backend legado continua como fallback e referencia, sem bloquear o encerramento do `v0.2` no caminho oficial
+- o escopo principal do `v0.3` fica fechado sem dependencia de uma biblioteca de virtualizacao
+- o produto passa a reduzir retrabalho operacional ao reconciliar extratos com transacoes ja cadastradas
+- a proxima prioridade passa a ser evoluir a conciliacao com historico de lotes ou presets por banco antes de abrir automacoes mais agressivas
+
 ## O que ja foi feito
 
 ### Base tecnica
@@ -61,6 +90,8 @@ O produto ja possui um MVP funcional, com frontend, backend, autenticacao, persi
 
 - Exportacao em JSON
 - Importacao em JSON
+- Exportacao em CSV no fluxo principal
+- Importacao de extrato bancario CSV com preview e conciliacao
 - Reconciliacao de categorias durante importacao
 
 ### Frontend e experiencia atual
@@ -115,14 +146,13 @@ Objetivo: estabilizar o produto e reduzir regressao antes de ampliar escopo.
 
 Objetivo: melhorar experiencia real de uso e eficiencia do trabalho diario.
 
-- Criar tela no frontend para editar `app settings`
 - Melhorar UX dos filtros e da busca de transacoes
 - Adicionar paginação ou virtualizacao para listas maiores
 - Permitir acoes em lote em transacoes
 - Melhorar manipulacao de recorrencia e parcelamento
 - Permitir editar uma serie inteira de lancamentos
 - Tornar importacao mais segura com preview e confirmacao
-- Adicionar exportacao CSV do lado do backend
+- Refinar exportacao CSV conforme necessidades reais de operacao
 
 ## Fase 3 - Inteligencia de produto
 
@@ -163,11 +193,11 @@ Objetivo: deixar o produto preparado para operacao estavel em producao.
 
 Se a evolucao for incremental e pragmatica, a ordem recomendada e:
 
-1. Testes E2E e testes de integracao dos fluxos criticos
-2. Tela de configuracoes reais para `app settings`
-3. Melhorias de UX em filtros, recorrencia e series
-4. Gestao mais completa de convites e acoes administrativas
-5. Metas, orcamentos e insights financeiros
+1. Melhorias de UX em filtros, recorrencia e series
+2. Gestao mais completa de convites e acoes administrativas
+3. Metas, orcamentos e insights financeiros
+4. Estrutura comercial e multiusuario
+5. Escala, observabilidade e endurecimento operacional
 
 ## Proposta de marco por versao
 
@@ -189,7 +219,11 @@ Consolidacao tecnica com:
 - testes mais completos
 - mais estabilidade
 - melhores mensagens de erro
-- tela de configuracoes do app
+- release operacional documentado
+
+Status:
+
+- concluido no caminho oficial `Vercel + Supabase`
 
 ### v0.3
 
@@ -199,6 +233,10 @@ Melhorias de usabilidade com:
 - recorrencia mais robusta
 - acoes em lote
 - relatorios melhores
+
+Status:
+
+- concluido no frontend oficial com filtros, edicao de serie, acoes em lote, importacao com preview, CSV e renderizacao progressiva de listas grandes
 
 ### v0.4
 
@@ -221,3 +259,7 @@ Pronto para operacao comercial com:
 ## Observacoes finais
 
 O produto ja tem base suficiente para evoluir com disciplina. O principal risco agora nao e falta de funcionalidade, e sim crescer sem consolidar os fluxos principais. Por isso, o foco imediato deve estar em qualidade, previsibilidade operacional e refinamento da experiencia central.
+
+Neste momento, a consolidacao tecnica do `v0.2` ja sustenta a operacao oficial do produto, e o ciclo de usabilidade do `v0.3` esta fechado no frontend oficial.
+
+A proxima decisao de produto deve sair do eixo operacional para o `v0.4`: metas, orcamentos, comparativos e indicadores analiticos no dashboard.

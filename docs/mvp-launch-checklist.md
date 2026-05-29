@@ -32,10 +32,11 @@
 
 ## 4. Smoke test in production
 
+- Run `npm run smoke:prod`
 - Open `https://total-control-app.vercel.app`
 - Create the first account and confirm it becomes admin
 - Log out and log back in
-- Create one public non-admin account
+- Attempt a second public signup and confirm it is blocked
 - Create an invite from the admin account
 - Register one account using the invite flow
 - Create, edit and delete a transaction
@@ -44,11 +45,14 @@
 - Save brand settings and app settings
 - Export JSON
 - Import JSON
+- Import a bank statement CSV, review the reconciliation preview and confirm safe changes
 
 ## 5. Support checklist
 
 - Admin bootstrap:
   first public signup becomes admin
+- Public registration lock:
+  after bootstrap, new public accounts must be rejected
 - Invite flow:
   admin creates the invite from the account tools area
 - Branding:
@@ -57,11 +61,14 @@
   admin updates locale, currency, timezone and billing day
 - Import validation:
   confirm imported categories and transactions appear only for the authenticated user
+- Statement reconciliation:
+  confirm CSV conflicts and invalid rows are shown in preview and not persisted automatically
 
 ## 6. Release acceptance
 
 - Frontend published on Vercel with the real Supabase project
 - First admin created successfully
 - At least one regular user created successfully
+- Public signup closed after bootstrap and invite flow validated
 - Core financial flows validated end-to-end
 - No secret values exposed in the repository or frontend bundle

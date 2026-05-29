@@ -7,7 +7,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test": "tsx --test src/**/*.test.ts",
+    "test:unit": "tsx --test src/lib/*.test.ts",
+    "test:integration": "tsx --test src/routes/*.test.ts",
+    "test": "npm run test:unit && npm run test:integration",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed-demo": "tsx src/db/seed-demo.ts"
