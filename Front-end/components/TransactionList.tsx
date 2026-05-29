@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Transaction, TransactionFilters } from '../types';
 import { useLanguage } from '../LanguageContext';
 import ConfirmationDialog from './ConfirmationDialog';
@@ -51,11 +51,26 @@ const TransactionList: React.FC<TransactionListProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmDeleteMany, setConfirmDeleteMany] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showImportMenu, setShowImportMenu] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [draftFrom, setDraftFrom] = useState(extractDateInputValue(filters.from));
   const [draftTo, setDraftTo] = useState(extractDateInputValue(filters.to));
   const importRef = useRef<HTMLInputElement>(null);
   const statementImportRef = useRef<HTMLInputElement>(null);
   const ofxImportRef = useRef<HTMLInputElement>(null);
+  const importMenuRef = useRef<HTMLDivElement>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!showImportMenu && !showExportMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (showImportMenu && importMenuRef.current && !importMenuRef.current.contains(e.target as Node)) setShowImportMenu(false);
+      if (showExportMenu && exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) setShowExportMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showImportMenu, showExportMenu]);
 
   const categories = useMemo(() => Object.entries(allCategoriesMap), [allCategoriesMap]);
   const hasActiveFilters = useMemo(() => hasActiveTransactionFilters(filters), [filters]);
@@ -201,78 +216,94 @@ const TransactionList: React.FC<TransactionListProps> = ({
           <p className="text-sm text-slate-400">{t('transactions_overview')}</p>
           <p className="mt-2 text-2xl font-extrabold text-cyan-300">{formatCurrency(totalVisible)}</p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        {/* ── Compact toolbar ── */}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+
+          {/* Select toggle */}
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-4 py-2 text-sm font-semibold text-slate-100"
-            onClick={() => setShowFilters(current => !current)}
+            className={`button-secondary !rounded-full !px-3 !py-2 ${isSelectionMode ? '!border-cyan-400/40 !bg-cyan-500/10 !text-cyan-100' : ''}`}
+            onClick={() => isSelectionMode ? resetSelection() : setIsSelectionMode(true)}
           >
-            {t('filters')}
-            <ChevronDownIcon className={`h-4 w-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+            {isSelectionMode ? t('cancel_selection') : t('select_transactions')}
           </button>
-          <div className="flex flex-wrap justify-end gap-2">
+
+          {/* Categories */}
+          <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={onOpenCategoryModal}>
+            {t('categories')}
+          </button>
+
+          {/* Import dropdown */}
+          <div ref={importMenuRef} className="relative">
             <button
               type="button"
-              className={`button-secondary !rounded-full !px-3 !py-2 ${isSelectionMode ? '!border-cyan-400/40 !bg-cyan-500/10 !text-cyan-100' : ''}`}
-              onClick={() => {
-                if (isSelectionMode) {
-                  resetSelection();
-                  return;
-                }
-                setIsSelectionMode(true);
-              }}
+              className={`inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-sm font-semibold text-slate-100 transition hover:border-white/20 ${showImportMenu ? 'border-white/20' : ''}`}
+              onClick={() => { setShowImportMenu(v => !v); setShowExportMenu(false); }}
             >
-              {isSelectionMode ? t('cancel_selection') : t('select_transactions')}
+              Importar
+              <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${showImportMenu ? 'rotate-180' : ''}`} />
             </button>
-            <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={onOpenCategoryModal}>{t('categories')}</button>
-            <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={onExportCsv}>
-              <ExportIcon className="h-4 w-4" />
-              {t('export_csv')}
-            </button>
-            <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={onExportJson}>{t('export_json')}</button>
-            <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={() => importRef.current?.click()}>{t('import_json')}</button>
-            <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={() => statementImportRef.current?.click()}>{t('import_statement_csv')}</button>
-            <button type="button" className="button-secondary !rounded-full !px-3 !py-2" onClick={() => ofxImportRef.current?.click()}>{t('import_statement_ofx')}</button>
+            {showImportMenu && (
+              <div className="absolute right-0 top-full z-20 mt-1.5 min-w-[180px] rounded-2xl border border-white/10 bg-slate-900 py-1.5 shadow-xl">
+                <button type="button" className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800" onClick={() => { statementImportRef.current?.click(); setShowImportMenu(false); }}>
+                  Extrato CSV
+                </button>
+                <button type="button" className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800" onClick={() => { ofxImportRef.current?.click(); setShowImportMenu(false); }}>
+                  Extrato OFX / QFX
+                </button>
+                <div className="my-1 border-t border-white/10" />
+                <button type="button" className="w-full px-4 py-2.5 text-left text-sm text-slate-400 hover:bg-slate-800" onClick={() => { importRef.current?.click(); setShowImportMenu(false); }}>
+                  Backup JSON
+                </button>
+              </div>
+            )}
           </div>
-          <input
-            ref={importRef}
-            type="file"
-            accept="application/json"
-            className="hidden"
-            onChange={event => {
-              const file = event.target.files?.[0];
-              if (file) {
-                onImportJson(file);
-              }
-              event.target.value = '';
-            }}
-          />
-          <input
-            ref={statementImportRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={event => {
-              const file = event.target.files?.[0];
-              if (file) {
-                onImportStatementCsv(file);
-              }
-              event.target.value = '';
-            }}
-          />
-          <input
-            ref={ofxImportRef}
-            type="file"
-            accept=".ofx,.qfx,application/x-ofx"
-            className="hidden"
-            onChange={event => {
-              const file = event.target.files?.[0];
-              if (file) {
-                onImportStatementOfx(file);
-              }
-              event.target.value = '';
-            }}
-          />
+
+          {/* Export dropdown */}
+          <div ref={exportMenuRef} className="relative">
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-sm font-semibold text-slate-100 transition hover:border-white/20 ${showExportMenu ? 'border-white/20' : ''}`}
+              onClick={() => { setShowExportMenu(v => !v); setShowImportMenu(false); }}
+            >
+              <ExportIcon className="h-3.5 w-3.5" />
+              Exportar
+              <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-full z-20 mt-1.5 min-w-[160px] rounded-2xl border border-white/10 bg-slate-900 py-1.5 shadow-xl">
+                <button type="button" className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800" onClick={() => { onExportCsv(); setShowExportMenu(false); }}>
+                  CSV
+                </button>
+                <button type="button" className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800" onClick={() => { onExportJson(); setShowExportMenu(false); }}>
+                  JSON (backup)
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Filters */}
+          <button
+            type="button"
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm font-semibold transition ${
+              hasActiveFilters
+                ? 'border-[var(--app-primary)]/60 bg-[var(--app-primary)]/10 text-slate-100'
+                : 'border-white/10 bg-slate-900/70 text-slate-100 hover:border-white/20'
+            }`}
+            onClick={() => setShowFilters(v => !v)}
+          >
+            {t('filters')}
+            {hasActiveFilters && <span className="flex h-1.5 w-1.5 rounded-full bg-[var(--app-primary)]" />}
+            <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* Hidden file inputs */}
+          <input ref={importRef} type="file" accept="application/json" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) onImportJson(f); e.target.value = ''; }} />
+          <input ref={statementImportRef} type="file" accept=".csv,text/csv" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) onImportStatementCsv(f); e.target.value = ''; }} />
+          <input ref={ofxImportRef} type="file" accept=".ofx,.qfx,application/x-ofx" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) onImportStatementOfx(f); e.target.value = ''; }} />
         </div>
       </div>
 
