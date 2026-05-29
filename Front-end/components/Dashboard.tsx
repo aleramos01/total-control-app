@@ -15,8 +15,14 @@ const ACCOUNT_ICON_MAP: Record<string, string> = {
   bank: '🏦', wallet: '👛', card: '💳', piggy: '🐷', invest: '📈', cash: '💵',
 };
 
+// Module-level stable empty arrays — prevents useMemo from re-running every render
+// when the parent omits these optional props (default `= []` creates a new reference each call).
+const NO_ACCOUNTS: Account[] = [];
+const NO_TRANSACTIONS: Transaction[] = [];
+
 const Dashboard: React.FC<DashboardProps> = ({
-  totalIncome, totalExpenses, balance, upcomingCount, accounts = [], transactions = [],
+  totalIncome, totalExpenses, balance, upcomingCount,
+  accounts = NO_ACCOUNTS, transactions = NO_TRANSACTIONS,
 }) => {
   const { t, formatCurrency } = useLanguage();
 

@@ -100,7 +100,11 @@ const StatementImportPreviewModal: React.FC<StatementImportPreviewModalProps> = 
         canSelect: true,
         defaultSelected: true,
         matchTransactionId: match.transaction.id,
-        matchIsPaid: match.transaction.type === TransactionType.EXPENSE ? true : undefined,
+        // Only mark as paid if the statement row date is today or in the past.
+        // Future-dated expenses (e.g. scheduled payments) should not be prematurely paid.
+        matchIsPaid: match.transaction.type === TransactionType.EXPENSE
+          && match.row.date.slice(0, 10) <= new Date().toISOString().slice(0, 10)
+          ? true : undefined,
         hintKey: 'statement_preview_row_update' as never,
       });
     });

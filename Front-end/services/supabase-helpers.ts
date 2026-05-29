@@ -131,12 +131,16 @@ export function mapTransactionRow(row: DbTransactionRow): Transaction {
     id: row.id,
     description: row.description,
     amount: Number(row.amount),
-    // Parse date-only strings (YYYY-MM-DD) explicitly as UTC midnight to avoid
-    // timezone-driven shifts. new Date('YYYY-MM-DD') is spec-compliant UTC, but
-    // the explicit form makes the intent clear and future-proofs against server
-    // rows that may include a bare local timestamp without a Z suffix.
-    date: /^\d{4}-\d{2}-\d{2}$/.test(row.transaction_date)
-      ? `${row.transaction_date}T00:00:00.000Z`
+    // Normalise any date(-time) string that starts with YYYY-MM-DD to UTC midnight.
+    // Handles three Supabase serialisation formats for the `date` and
+    // `timestamp without time zone` column types:
+    //   • 'YYYY-MM-DD'              (date column — most common)
+    //   • 'YYYY-MM-DD HH:MM:SS'     (timestamp without time zone — space separator)
+    //   • 'YYYY-MM-DDTHH:MM:SS.sssZ' (timestamp with time zone — already UTC)
+    // All three are normalised to 'YYYY-MM-DDT00:00:00.000Z' so that transaction
+    // dates are always stored as UTC midnight, avoiding timezone-driven bucket shifts.
+    date: /^\d{4}-\d{2}-\d{2}/.test(row.transaction_date)
+      ? `${row.transaction_date.slice(0, 10)}T00:00:00.000Z`
       : new Date(row.transaction_date).toISOString(),
     type: row.type,
     category: row.category_key,

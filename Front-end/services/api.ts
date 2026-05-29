@@ -464,12 +464,14 @@ export async function applyStatementImportActions(actions: StatementImportAction
   const updateActions = actions.filter((a): a is Extract<StatementImportAction, { type: 'update' }> => a.type === 'update');
   const createActions = actions.filter((a): a is Extract<StatementImportAction, { type: 'create' }> => a.type === 'create');
 
-  // Run all updates in parallel (one call per row, but concurrent instead of sequential)
-  const updatedRows = await Promise.all(
+  // Run all updates concurrently. Use allSettled so a single failure does NOT abort the
+  // bulk-insert that follows — partial success is better than losing all creates.
+  const now = new Date().toISOString();
+  const updateSettled = await Promise.allSettled(
     updateActions.map(async action => {
       const payload: { amount: number; updated_at: string; is_paid?: boolean } = {
         amount: action.amount,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       };
       if (action.isPaid !== undefined) payload.is_paid = action.isPaid;
 
@@ -483,6 +485,15 @@ export async function applyStatementImportActions(actions: StatementImportAction
       return mapTransactionRow(ensureResult(data as DbTransactionRow | null, error, 'Failed to reconcile transaction'));
     }),
   );
+
+  const updatedRows = updateSettled
+    .filter((r): r is PromiseFulfilledResult<Transaction> => r.status === 'fulfilled')
+    .map(r => r.value);
+
+  const updateErrors = updateSettled.filter(r => r.status === 'rejected');
+  if (updateErrors.length > 0) {
+    console.error(`[applyStatementImportActions] ${updateErrors.length} update(s) failed:`, updateErrors.map(r => (r as PromiseRejectedResult).reason));
+  }
 
   // Bulk-insert all new transactions in a single DB call
   const createdRows: Transaction[] = [];

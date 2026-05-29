@@ -320,7 +320,9 @@ export function parseBankStatementCsvWithMapping(text: string, mapping: CsvColum
       return;
     }
 
-    const type = signedAmount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
+    // Use strict > 0 for income: zero-amount rows (fee reversals, adjustments) default to
+    // EXPENSE, which is the conservative/safer assumption for a zero-value bank entry.
+    const type = signedAmount > 0 ? TransactionType.INCOME : TransactionType.EXPENSE;
     const amount = Math.abs(signedAmount);
     const signature = buildStatementSignature(date, description, amount, type);
 
@@ -431,8 +433,14 @@ export function buildStatementImportPreview(
     seenStatementSignatures.add(row.signature);
 
     const exactExisting = existingSignatureMap.get(row.signature);
-    if (exactExisting && isLikelyAlreadyImported(exactExisting)) {
-      duplicates.push({ row, transaction: exactExisting, reason: 'Lancamento ja conciliado anteriormente' });
+    if (exactExisting) {
+      // Any exact-signature match goes to duplicates for user review, regardless of whether
+      // it carries the import marker. Falling through to buildCandidates would produce a
+      // high-confidence "match" that auto-updates a manually-entered transaction.
+      const reason = isLikelyAlreadyImported(exactExisting)
+        ? 'Lancamento ja conciliado anteriormente'
+        : 'Possivel duplicata: lancamento identico ja existe';
+      duplicates.push({ row, transaction: exactExisting, reason });
       return;
     }
 
