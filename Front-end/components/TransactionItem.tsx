@@ -13,9 +13,21 @@ interface TransactionItemProps {
   onDelete: (id: string) => void;
   allCategoriesMap: { [key: string]: { name: string } };
   isGrouped?: boolean;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
-const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, onEdit, onDelete, allCategoriesMap, isGrouped = false }) => {
+const TransactionItem: React.FC<TransactionItemProps> = ({
+  transaction,
+  onEdit,
+  onDelete,
+  allCategoriesMap,
+  isGrouped = false,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
+}) => {
   const { locale, t, formatCurrency } = useLanguage();
 
   const isIncome = transaction.type === TransactionType.INCOME;
@@ -35,16 +47,34 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, onEdit, 
   const baseClasses = "group flex items-center space-x-4 transition-all";
   const standaloneClasses = "rounded-2xl border border-white/10 bg-slate-800/70 p-4 hover:border-[var(--app-primary)] hover:bg-slate-800";
   const groupedClasses = "rounded-xl bg-slate-900/70 p-3";
+  const selectedClasses = isSelected ? 'border border-cyan-500/40 bg-cyan-500/10' : '';
 
   return (
-    <div className={`${baseClasses} ${isGrouped ? groupedClasses : standaloneClasses}`}>
+    <div className={`${baseClasses} ${isGrouped ? groupedClasses : standaloneClasses} ${selectedClasses}`}>
+      {selectionMode ? (
+        <button
+          type="button"
+          onClick={() => onToggleSelect?.(transaction.id)}
+          className={`flex h-6 w-6 items-center justify-center rounded border transition ${
+            isSelected
+              ? 'border-cyan-400 bg-cyan-400/20 text-cyan-100'
+              : 'border-white/20 bg-slate-950/70 text-transparent'
+          }`}
+          aria-label={isSelected ? t('unselect_transaction') : t('select_transaction')}
+        >
+          <span className="text-xs font-bold">✓</span>
+        </button>
+      ) : null}
       <div className={`p-3 rounded-full ${iconBgColor}`}>
         <Icon className={`h-5 w-5 ${amountColor}`} />
       </div>
-      <div className="flex-1">
-        <p className="font-semibold text-slate-200">{transaction.description}</p>
+      <div
+        className={`flex-1 min-w-0 ${!selectionMode ? 'cursor-pointer' : ''}`}
+        onClick={() => { if (!selectionMode) onEdit(transaction.id); }}
+      >
+        <p className="font-semibold text-slate-200 truncate">{transaction.description}</p>
         <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
-          <span>{isGrouped ? `${categoryName} - ${formattedDate}` : `${categoryName} - ${formattedDate}`}</span>
+          <span>{`${categoryName} · ${formattedDate}`}</span>
           {installmentLabel ? (
             <span className="rounded-full border border-white/10 bg-slate-950/50 px-2 py-0.5 text-xs text-slate-300">
               {installmentLabel}

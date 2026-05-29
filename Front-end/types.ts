@@ -66,6 +66,19 @@ export interface Transaction {
   dueDate?: string | null;
   isPaid?: boolean;
   notes?: string | null;
+  accountId?: string | null;
+}
+
+export type AccountType = 'checking' | 'savings' | 'credit_card' | 'investment' | 'cash';
+
+export interface Account {
+  id: string;
+  name: string;
+  bank: string | null;
+  accountType: AccountType;
+  initialBalance: number;
+  color: string;
+  icon: string;
 }
 
 export type TransactionScope = 'single' | 'series';

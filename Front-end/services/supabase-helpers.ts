@@ -1,7 +1,7 @@
-import { addMonthsToStoredDate } from '../lib/transactions';
+import { addMonthsToStoredDate, stripInstallmentSuffix } from '../lib/transactions';
 import { buildUniqueCategoryKey } from '../lib/categories';
 import { createId } from '../lib/ids';
-import type { AppSettings, BrandSettings, CustomCategory, InviteInfo, Transaction, TransactionFilters, User } from '../types';
+import type { Account, AppSettings, BrandSettings, CustomCategory, InviteInfo, Transaction, TransactionFilters, User } from '../types';
 
 export type DbProfileRow = {
   id: string;
@@ -59,6 +59,20 @@ export type DbTransactionRow = {
   due_date: string | null;
   is_paid: boolean;
   notes: string | null;
+  account_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DbAccountRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  bank: string | null;
+  account_type: string;
+  initial_balance: number;
+  color: string;
+  icon: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -128,6 +142,19 @@ export function mapTransactionRow(row: DbTransactionRow): Transaction {
     dueDate: toIsoString(row.due_date),
     isPaid: row.is_paid,
     notes: row.notes,
+    accountId: row.account_id ?? null,
+  };
+}
+
+export function mapAccountRow(row: DbAccountRow): Account {
+  return {
+    id: row.id,
+    name: row.name,
+    bank: row.bank,
+    accountType: row.account_type as Account['accountType'],
+    initialBalance: Number(row.initial_balance),
+    color: row.color,
+    icon: row.icon,
   };
 }
 
@@ -221,6 +248,7 @@ export function buildTransactionInsertRows(
       due_date: nextDueDate,
       is_paid: Boolean(transaction.isPaid),
       notes: transaction.notes ?? null,
+      account_id: transaction.accountId ?? null,
       created_at: now,
       updated_at: now,
     };
@@ -232,8 +260,11 @@ export function buildTransactionUpdateRow(
   existing: DbTransactionRow,
   now = new Date().toISOString(),
 ) {
+  const isInstallment = existing.schedule_type === 'installment' && existing.installment_count && existing.installment_index;
+  const baseDescription = stripInstallmentSuffix(transaction.description);
+
   return {
-    description: transaction.description,
+    description: isInstallment ? `${baseDescription} (${existing.installment_index}/${existing.installment_count})` : transaction.description,
     amount: transaction.amount,
     type: transaction.type,
     category_key: transaction.category,
@@ -246,8 +277,51 @@ export function buildTransactionUpdateRow(
     due_date: transaction.dueDate ?? null,
     is_paid: Boolean(transaction.isPaid),
     notes: transaction.notes ?? null,
+    account_id: transaction.accountId ?? null,
     updated_at: now,
   };
+}
+
+export function buildTransactionSeriesUpdateRows(
+  transaction: Omit<Transaction, 'id'> & { id?: string },
+  existingRows: DbTransactionRow[],
+  anchorTransactionId: string,
+  now = new Date().toISOString(),
+) {
+  const anchorIndex = existingRows.findIndex(row => row.id === anchorTransactionId);
+  if (anchorIndex === -1) {
+    throw new Error('Transaction series anchor not found');
+  }
+
+  const anchorRow = existingRows[anchorIndex];
+  const anchorInstallmentIndex = anchorRow.installment_index ?? anchorIndex + 1;
+  const baseDescription = stripInstallmentSuffix(transaction.description);
+
+  return existingRows.map((row, index) => {
+    const currentInstallmentIndex = row.installment_index ?? index + 1;
+    const monthOffset = currentInstallmentIndex - anchorInstallmentIndex;
+    const nextDate = addMonthsToStoredDate(transaction.date, monthOffset);
+    const nextDueDate = transaction.dueDate ? addMonthsToStoredDate(transaction.dueDate, monthOffset) : null;
+    const hasInstallmentLabel = row.schedule_type === 'installment' && row.installment_count && currentInstallmentIndex;
+
+    return {
+      id: row.id,
+      description: hasInstallmentLabel ? `${baseDescription} (${currentInstallmentIndex}/${row.installment_count})` : transaction.description,
+      amount: transaction.amount,
+      type: transaction.type,
+      category_key: transaction.category,
+      transaction_date: nextDate,
+      schedule_type: row.schedule_type,
+      series_id: row.series_id,
+      installment_index: row.installment_index,
+      installment_count: row.installment_count,
+      is_recurring: row.is_recurring,
+      due_date: nextDueDate,
+      is_paid: Boolean(transaction.isPaid),
+      notes: transaction.notes ?? null,
+      updated_at: now,
+    };
+  });
 }
 
 export function buildCategoryInsertRow(userId: string, category: Omit<CustomCategory, 'id' | 'key'>, existingKeys: Iterable<string>) {

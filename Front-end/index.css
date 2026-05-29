@@ -95,3 +95,51 @@ select option {
   background: #0f172a;
   color: #e2e8f0;
 }
+
+/* ── Animations ── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out both;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.35s ease-out both;
+}
+
+/* ── Tooltip ── */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: rgba(15, 23, 42, 0.96);
+  color: #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid rgba(148,163,184,0.15);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 60;
+}
+
+[data-tooltip]:hover::after {
+  opacity: 1;
+}

@@ -1,22 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Transaction, TransactionType, CustomCategory } from '../types';
+import { Account, Transaction, TransactionScope, TransactionType, CustomCategory } from '../types';
 import { useLanguage } from '../LanguageContext';
-import { extractDateInputValue, suggestCategoryFromDescription, toStoredDate } from '../lib/transactions';
+import { extractDateInputValue, stripInstallmentSuffix, suggestCategoryFromDescription, toStoredDate } from '../lib/transactions';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { XCircleIcon } from './icons/XCircleIcon';
 
 interface TransactionFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (transaction: Omit<Transaction, 'id'> & { id?: string }) => void;
+  onSave: (transaction: Omit<Transaction, 'id'> & { id?: string }, scope: TransactionScope) => void;
   transaction: Transaction | null;
   allCategoriesMap: { [key: string]: { name: string } };
   allCategoryKeys: string[];
   customCategories: CustomCategory[];
+  onAddCategory?: (category: { name: string; color: string }) => Promise<CustomCategory>;
+  accounts?: Account[];
 }
 
+const QUICK_COLORS = ['#EF4444','#F59E0B','#10B981','#3B82F6','#8B5CF6','#EC4899','#0891B2','#14B8A6','#6366F1','#6B7280'];
+
 const TransactionForm: React.FC<TransactionFormProps> = ({
-  isOpen, onClose, onSave, transaction, allCategoriesMap, allCategoryKeys,
+  isOpen, onClose, onSave, transaction, allCategoriesMap, allCategoryKeys, onAddCategory, accounts,
 }) => {
   const { t, locale } = useLanguage();
   const scheduleLabels = {
@@ -37,11 +41,19 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const [notes, setNotes] = useState('');
   const [isCategoryManuallySet, setIsCategoryManuallySet] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [showQuickCategory, setShowQuickCategory] = useState(false);
+  const [quickCategoryName, setQuickCategoryName] = useState('');
+  const [quickCategoryColor, setQuickCategoryColor] = useState('#3B82F6');
+  const [isSavingQuickCategory, setIsSavingQuickCategory] = useState(false);
+  const [saveScope, setSaveScope] = useState<TransactionScope>('single');
+  const isInstallmentSeries = Boolean(transaction?.seriesId && (transaction.installmentCount ?? 0) > 1);
+  const shouldLockSeriesStructure = Boolean(transaction?.seriesId);
 
   useEffect(() => {
     if (transaction) {
       const resolvedScheduleType = transaction.scheduleType ?? (transaction.installmentCount && transaction.installmentCount > 1 ? 'installment' : transaction.isRecurring ? 'recurring' : 'once');
-      setDescription(transaction.description);
+      setDescription(stripInstallmentSuffix(transaction.description));
       setAmount(String(transaction.amount));
       setDate(extractDateInputValue(transaction.date));
       setType(transaction.type);
@@ -52,7 +64,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       setDueDate(extractDateInputValue(transaction.dueDate ?? undefined));
       setIsPaid(!!transaction.isPaid);
       setNotes(transaction.notes ?? '');
+      setAccountId(transaction.accountId ?? null);
       setIsCategoryManuallySet(true);
+      setSaveScope('single');
       setIsAdvancedOpen(
         !!transaction.notes || (
           transaction.type === TransactionType.EXPENSE && (
@@ -76,8 +90,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     setDueDate('');
     setIsPaid(false);
     setNotes('');
+    setAccountId(null);
     setIsCategoryManuallySet(false);
     setIsAdvancedOpen(false);
+    setSaveScope('single');
   }, [transaction, isOpen]);
 
   useEffect(() => {
@@ -143,6 +159,20 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     return null;
   }, [scheduleType, t, type]);
 
+  const handleSaveQuickCategory = async () => {
+    if (!quickCategoryName.trim() || !onAddCategory) return;
+    setIsSavingQuickCategory(true);
+    try {
+      const created = await onAddCategory({ name: quickCategoryName.trim(), color: quickCategoryColor });
+      setCategory(created.key);
+      setIsCategoryManuallySet(true);
+      setShowQuickCategory(false);
+      setQuickCategoryName('');
+    } finally {
+      setIsSavingQuickCategory(false);
+    }
+  };
+
   const parsedAmount = Number(amount);
   const amountPreview = Number.isFinite(parsedAmount) && amount !== ''
     ? parsedAmount.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -167,7 +197,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       dueDate: type === TransactionType.EXPENSE && scheduleType === 'recurring' && dueDate ? toStoredDate(dueDate) : undefined,
       isPaid: type === TransactionType.EXPENSE ? isPaid : true,
       notes,
-    });
+      accountId: accountId ?? null,
+    }, saveScope);
   };
 
   if (!isOpen) return null;
@@ -218,20 +249,49 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {isInstallmentSeries ? (
+                <section className="rounded-[24px] border border-cyan-400/20 bg-cyan-500/8 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">{t('series_edit_scope')}</p>
+                  <p className="mt-2 text-sm text-slate-300">{t('series_edit_scope_helper')}</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-slate-950/70 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setSaveScope('single')}
+                      className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                        saveScope === 'single' ? 'bg-slate-700 text-slate-50' : 'text-slate-400'
+                      }`}
+                    >
+                      {t('edit_this_transaction')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSaveScope('series')}
+                      className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                        saveScope === 'series' ? 'bg-cyan-500/20 text-cyan-100' : 'text-slate-400'
+                      }`}
+                    >
+                      {t('edit_entire_series')}
+                    </button>
+                  </div>
+                </section>
+              ) : null}
+
               <section className="rounded-[24px] border border-white/10 bg-slate-900/60 p-4">
                 <div className="mb-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('type')}</p>
                   <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-slate-950/70 p-1">
                     <button
                       type="button"
-                      onClick={() => setType(TransactionType.EXPENSE)}
+                      onClick={() => !shouldLockSeriesStructure && setType(TransactionType.EXPENSE)}
+                      disabled={shouldLockSeriesStructure}
                       className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${type === TransactionType.EXPENSE ? 'bg-rose-500/20 text-rose-100' : 'text-slate-400'}`}
                     >
                       {t('expenses')}
                     </button>
                     <button
                       type="button"
-                      onClick={() => setType(TransactionType.INCOME)}
+                      onClick={() => !shouldLockSeriesStructure && setType(TransactionType.INCOME)}
+                      disabled={shouldLockSeriesStructure}
                       className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${type === TransactionType.INCOME ? 'bg-emerald-500/20 text-emerald-100' : 'text-slate-400'}`}
                     >
                       {t('income')}
@@ -267,25 +327,94 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                 </div>
               </section>
 
+              {accounts && accounts.length > 0 ? (
+                <section className="rounded-[24px] border border-white/10 bg-slate-900/60 p-4">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Conta</label>
+                  <select
+                    value={accountId ?? ''}
+                    onChange={e => setAccountId(e.target.value || null)}
+                    className="input-base"
+                  >
+                    <option value="">Sem conta vinculada</option>
+                    {accounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.name}{acc.bank ? ` · ${acc.bank}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </section>
+              ) : null}
+
               <section className="rounded-[24px] border border-white/10 bg-slate-900/60 p-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
+                  <div className="relative">
                     <label htmlFor="category" className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{t('category')}</label>
-                    <select
-                      id="category"
-                      value={category}
-                      onChange={(event) => {
-                        setCategory(event.target.value);
-                        setIsCategoryManuallySet(true);
-                      }}
-                      className="input-base"
-                    >
-                      {allCategoryKeys.map(catKey => (
-                        <option key={catKey} value={catKey}>
-                          {allCategoriesMap[catKey].name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex gap-2">
+                      <select
+                        id="category"
+                        value={category}
+                        onChange={(event) => {
+                          setCategory(event.target.value);
+                          setIsCategoryManuallySet(true);
+                        }}
+                        className="input-base flex-1"
+                      >
+                        {allCategoryKeys.map(catKey => (
+                          <option key={catKey} value={catKey}>
+                            {allCategoriesMap[catKey].name}
+                          </option>
+                        ))}
+                      </select>
+                      {onAddCategory ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowQuickCategory(v => !v)}
+                          className="flex h-full items-center justify-center rounded-2xl border border-white/10 bg-slate-900/70 px-3 text-xl font-bold text-slate-300 transition hover:border-[var(--app-primary)] hover:text-white"
+                          aria-label={t('add_category')}
+                          title={t('add_category')}
+                        >
+                          +
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {/* Quick category mini-modal */}
+                    {showQuickCategory ? (
+                      <div className="absolute left-0 right-0 top-full z-20 mt-2 animate-fade-in-up rounded-[20px] border border-white/10 bg-slate-900 p-4 shadow-2xl">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">{t('add_category')}</p>
+                        <input
+                          type="text"
+                          value={quickCategoryName}
+                          onChange={e => setQuickCategoryName(e.target.value)}
+                          placeholder={t('category_name_placeholder')}
+                          className="input-base mb-3"
+                          autoFocus
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void handleSaveQuickCategory(); } if (e.key === 'Escape') setShowQuickCategory(false); }}
+                        />
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {QUICK_COLORS.map(c => (
+                            <button
+                              key={c}
+                              type="button"
+                              className={`h-6 w-6 rounded-full border-2 transition ${quickCategoryColor === c ? 'border-white scale-110' : 'border-transparent'}`}
+                              style={{ backgroundColor: c }}
+                              onClick={() => setQuickCategoryColor(c)}
+                            />
+                          ))}
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button type="button" className="button-secondary !py-1.5 !text-sm" onClick={() => setShowQuickCategory(false)}>{t('cancel')}</button>
+                          <button
+                            type="button"
+                            className="button-primary !py-1.5 !text-sm"
+                            disabled={!quickCategoryName.trim() || isSavingQuickCategory}
+                            onClick={() => void handleSaveQuickCategory()}
+                          >
+                            {t('save')}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div>
@@ -326,7 +455,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                             <button
                               key={option}
                               type="button"
-                              onClick={() => setScheduleType(option)}
+                              onClick={() => !shouldLockSeriesStructure && setScheduleType(option)}
+                              disabled={shouldLockSeriesStructure}
                               className={`rounded-2xl px-3 py-3 text-sm font-semibold transition ${
                                 scheduleType === option ? 'bg-slate-700 text-slate-50' : 'text-slate-400'
                               }`}
@@ -348,6 +478,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                             value={installmentCount}
                             onChange={event => setInstallmentCount(Math.max(2, Number(event.target.value || 2)))}
                             className="input-base"
+                            disabled={shouldLockSeriesStructure}
                           />
                         </div>
                       ) : null}

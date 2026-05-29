@@ -1,6 +1,6 @@
 import type { FunctionsHttpError } from '@supabase/supabase-js';
-import type { AppSettings, AuthStatus, BrandSettings, CustomCategory, ExportPayload, InviteInfo, Transaction, TransactionFilters, User } from '../types';
-import { buildTransactionInsertRows, buildTransactionUpdateRow, buildCategoryInsertRow, buildPresetRange, defaultAppSettings, mapAppSettingsRow, mapBrandSettingsRow, mapCategoryRow, mapInviteRow, mapProfileRow, mapTransactionRow, type DbAppSettingsRow, type DbBrandSettingsRow, type DbCategoryRow, type DbInviteRow, type DbProfileRow, type DbTransactionRow } from './supabase-helpers';
+import type { Account, AppSettings, AuthStatus, BrandSettings, CustomCategory, ExportPayload, InviteInfo, StatementImportAction, StatementImportApplyResult, Transaction, TransactionFilters, TransactionScope, User } from '../types';
+import { buildTransactionInsertRows, buildTransactionSeriesUpdateRows, buildTransactionUpdateRow, buildCategoryInsertRow, buildPresetRange, defaultAppSettings, mapAccountRow, mapAppSettingsRow, mapBrandSettingsRow, mapCategoryRow, mapInviteRow, mapProfileRow, mapTransactionRow, type DbAccountRow, type DbAppSettingsRow, type DbBrandSettingsRow, type DbCategoryRow, type DbInviteRow, type DbProfileRow, type DbTransactionRow } from './supabase-helpers';
 import { resolveImportedTransactionCategory } from '../lib/categories';
 import { parseAuthStatusResponse, parseInviteResponse } from './parsers';
 import { supabase } from './supabase';
@@ -174,8 +174,8 @@ export async function fetchTransactions(filters: TransactionFilters = {}): Promi
   return (data as DbTransactionRow[] | null)?.map(mapTransactionRow) ?? [];
 }
 
-export async function saveTransaction(transaction: Omit<Transaction, 'id'> & { id?: string }): Promise<Transaction> {
-  const rows = await saveTransactionBatch(transaction);
+export async function saveTransaction(transaction: Omit<Transaction, 'id'> & { id?: string }, scope: TransactionScope = 'single'): Promise<Transaction> {
+  const rows = await saveTransactionBatch(transaction, scope);
   const [saved] = rows;
 
   if (!saved) {
@@ -185,7 +185,10 @@ export async function saveTransaction(transaction: Omit<Transaction, 'id'> & { i
   return saved;
 }
 
-export async function saveTransactionBatch(transaction: Omit<Transaction, 'id'> & { id?: string }): Promise<Transaction[]> {
+export async function saveTransactionBatch(
+  transaction: Omit<Transaction, 'id'> & { id?: string },
+  scope: TransactionScope = 'single',
+): Promise<Transaction[]> {
   const authUser = await getSessionUser();
 
   if (transaction.id) {
@@ -196,6 +199,38 @@ export async function saveTransactionBatch(transaction: Omit<Transaction, 'id'> 
       .single();
 
     const existingRow = ensureResult(existing as DbTransactionRow | null, fetchError, 'Transaction not found');
+    if (scope === 'series' && existingRow.series_id) {
+      const { data: seriesRows, error: seriesError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('series_id', existingRow.series_id)
+        .order('installment_index', { ascending: true });
+
+      if (seriesError) {
+        throw new Error(seriesError.message || 'Failed to fetch transaction series');
+      }
+
+      const seriesUpdateRows = buildTransactionSeriesUpdateRows(
+        transaction,
+        (seriesRows as DbTransactionRow[] | null) ?? [],
+        existingRow.id,
+      );
+
+      const updatedRows = await Promise.all(seriesUpdateRows.map(async (row) => {
+        const { id, ...payload } = row;
+        const { data, error } = await supabase
+          .from('transactions')
+          .update(payload)
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        return mapTransactionRow(ensureResult(data as DbTransactionRow | null, error, 'Failed to update transaction series'));
+      }));
+
+      return updatedRows.sort((left, right) => (left.installmentIndex ?? 0) - (right.installmentIndex ?? 0));
+    }
+
     const updatePayload = buildTransactionUpdateRow(transaction, existingRow);
     const { data, error } = await supabase
       .from('transactions')
@@ -233,6 +268,17 @@ export async function deleteTransaction(id: string): Promise<void> {
   }
 }
 
+export async function deleteTransactions(ids: string[]): Promise<void> {
+  if (ids.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase.from('transactions').delete().in('id', ids);
+  if (error) {
+    throw new Error(error.message || 'Failed to delete transactions');
+  }
+}
+
 export async function toggleTransactionPaidStatus(id: string, isPaid: boolean): Promise<Transaction> {
   const { data, error } = await supabase
     .from('transactions')
@@ -245,6 +291,27 @@ export async function toggleTransactionPaidStatus(id: string, isPaid: boolean): 
     .single();
 
   return mapTransactionRow(ensureResult(data as DbTransactionRow | null, error, 'Failed to update payment status'));
+}
+
+export async function toggleTransactionsPaidStatus(ids: string[], isPaid: boolean): Promise<Transaction[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('transactions')
+    .update({
+      is_paid: isPaid,
+      updated_at: new Date().toISOString(),
+    })
+    .in('id', ids)
+    .select('*');
+
+  if (error) {
+    throw new Error(error.message || 'Failed to update payment status');
+  }
+
+  return ((data as DbTransactionRow[] | null) ?? []).map(mapTransactionRow);
 }
 
 export async function fetchCustomCategories(): Promise<CustomCategory[]> {
@@ -391,9 +458,107 @@ export async function importData(payload: Pick<ExportPayload, 'transactions' | '
   return invokeFunction<MessageResponse>('import-data', payload);
 }
 
+export async function applyStatementImportActions(actions: StatementImportAction[]): Promise<StatementImportApplyResult> {
+  const authUser = await getSessionUser();
+  const updated: Transaction[] = [];
+  const created: Transaction[] = [];
+
+  for (const action of actions) {
+    if (action.type === 'update') {
+      const payload: { amount: number; updated_at: string; is_paid?: boolean } = {
+        amount: action.amount,
+        updated_at: new Date().toISOString(),
+      };
+      if (action.isPaid !== undefined) {
+        payload.is_paid = action.isPaid;
+      }
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .update(payload)
+        .eq('id', action.transactionId)
+        .select('*')
+        .single();
+
+      updated.push(mapTransactionRow(ensureResult(data as DbTransactionRow | null, error, 'Failed to reconcile transaction')));
+    } else {
+      const rows = buildTransactionInsertRows(authUser.id, action.transaction);
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert(rows)
+        .select('*');
+
+      if (error) {
+        throw new Error(error.message || 'Failed to create imported transaction');
+      }
+
+      created.push(...(((data as DbTransactionRow[] | null) ?? []).map(mapTransactionRow)));
+    }
+  }
+
+  return { updated, created };
+}
+
 export async function createInvite(expiresInDays?: number): Promise<InviteInfo> {
   const data = await invokeFunction('create-invite', expiresInDays ? { expiresInDays } : {});
   return parseInviteResponse(data).invite;
+}
+
+// ── Accounts ──────────────────────────────────────────────────────────────────
+
+export async function fetchAccounts(): Promise<Account[]> {
+  const authUser = await getSessionUser();
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('id, user_id, name, bank, account_type, initial_balance, color, icon')
+    .eq('user_id', authUser.id)
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(error.message || 'Failed to fetch accounts');
+  return ((data as DbAccountRow[] | null) ?? []).map(mapAccountRow);
+}
+
+export async function createAccount(account: Omit<Account, 'id'>): Promise<Account> {
+  const authUser = await getSessionUser();
+  const { data, error } = await supabase
+    .from('accounts')
+    .insert({
+      user_id: authUser.id,
+      name: account.name,
+      bank: account.bank ?? null,
+      account_type: account.accountType,
+      initial_balance: account.initialBalance,
+      color: account.color,
+      icon: account.icon,
+    })
+    .select('id, user_id, name, bank, account_type, initial_balance, color, icon')
+    .single();
+
+  return mapAccountRow(ensureResult(data as DbAccountRow | null, error, 'Failed to create account'));
+}
+
+export async function updateAccount(id: string, updates: Partial<Omit<Account, 'id'>>): Promise<Account> {
+  const payload: Record<string, unknown> = {};
+  if (updates.name !== undefined)           payload.name = updates.name;
+  if (updates.bank !== undefined)           payload.bank = updates.bank;
+  if (updates.accountType !== undefined)    payload.account_type = updates.accountType;
+  if (updates.initialBalance !== undefined) payload.initial_balance = updates.initialBalance;
+  if (updates.color !== undefined)          payload.color = updates.color;
+  if (updates.icon !== undefined)           payload.icon = updates.icon;
+
+  const { data, error } = await supabase
+    .from('accounts')
+    .update(payload)
+    .eq('id', id)
+    .select('id, user_id, name, bank, account_type, initial_balance, color, icon')
+    .single();
+
+  return mapAccountRow(ensureResult(data as DbAccountRow | null, error, 'Failed to update account'));
+}
+
+export async function deleteAccount(id: string): Promise<void> {
+  const { error } = await supabase.from('accounts').delete().eq('id', id);
+  if (error) throw new Error(error.message || 'Failed to delete account');
 }
 
 export { resolveImportedTransactionCategory };

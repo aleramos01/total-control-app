@@ -13,13 +13,15 @@ import * as api from './services/api';
 import Spinner from './components/Spinner';
 import AuthPage from './components/AuthPage';
 import { useAuth } from './hooks/useAuth';
-import { AppSettings, BrandSettings, CustomCategory, ExportPayload, ImportPreviewPayload, InviteInfo, StatementImportAction, StatementImportPreview, Transaction, TransactionFilters, TransactionScope, TransactionType } from './types';
+import { Account, AppSettings, BrandSettings, CustomCategory, ExportPayload, ImportPreviewPayload, InviteInfo, StatementImportAction, StatementImportPreview, Transaction, TransactionFilters, TransactionScope, TransactionType } from './types';
 import UpcomingBills from './components/UpcomingBills';
 import BrandSettingsModal from './components/BrandSettingsModal';
 import InviteManagementModal from './components/InviteManagementModal';
 import AppSettingsModal from './components/AppSettingsModal';
 import { buildTransactionsCsv, buildTransactionsCsvFilename } from './lib/transactions';
 import ExpenseChart from './components/ExpenseChart';
+import BalanceEvolutionChart from './components/BalanceEvolutionChart';
+import AccountManagerModal from './components/AccountManagerModal';
 import { BarChartIcon } from './components/icons/BarChartIcon';
 import { CalendarIcon } from './components/icons/CalendarIcon';
 import { CogIcon } from './components/icons/CogIcon';
@@ -78,6 +80,8 @@ const App: React.FC = () => {
   const [statementImportPreview, setStatementImportPreview] = useState<StatementImportPreview | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isStatementImporting, setIsStatementImporting] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [csvMappingState, setCsvMappingState] = useState<{
     rawText: string;
     fileName: string;
@@ -134,12 +138,14 @@ const App: React.FC = () => {
     setIsLoading(true);
     setDataError(null);
     try {
-      const [transactionsData, categoriesData] = await Promise.all([
+      const [transactionsData, categoriesData, accountsData] = await Promise.all([
         api.fetchTransactions(filters),
         api.fetchCustomCategories(),
+        api.fetchAccounts().catch(() => [] as Account[]),
       ]);
       setTransactions(transactionsData);
       setCustomCategories(categoriesData);
+      setAccounts(accountsData);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to fetch data';
       setDataError(message);
@@ -256,15 +262,11 @@ const App: React.FC = () => {
     }
   }, [showNotification, t]);
 
-  const handleAddCategory = useCallback(async (category: Omit<CustomCategory, 'id' | 'key'>) => {
-    try {
-      const created = await api.addCustomCategory(category);
-      setCustomCategories(prev => [...prev, created]);
-      showNotification(t('category_added_success'), 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create category';
-      showNotification(message, 'error');
-    }
+  const handleAddCategory = useCallback(async (category: Omit<CustomCategory, 'id' | 'key'>): Promise<CustomCategory> => {
+    const created = await api.addCustomCategory(category);
+    setCustomCategories(prev => [...prev, created]);
+    showNotification(t('category_added_success'), 'success');
+    return created;
   }, [showNotification, t]);
 
   const handleDeleteCategory = useCallback(async (id: string) => {
@@ -277,6 +279,26 @@ const App: React.FC = () => {
       showNotification(message, 'error');
     }
   }, [showNotification, t]);
+
+  const handleAddAccount = useCallback(async (account: Omit<Account, 'id'>) => {
+    try {
+      const created = await api.createAccount(account);
+      setAccounts(prev => [...prev, created]);
+      showNotification('Conta adicionada com sucesso.', 'success');
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Falha ao criar conta', 'error');
+    }
+  }, [showNotification]);
+
+  const handleDeleteAccount = useCallback(async (id: string) => {
+    try {
+      await api.deleteAccount(id);
+      setAccounts(prev => prev.filter(a => a.id !== id));
+      showNotification('Conta removida com sucesso.', 'success');
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Falha ao remover conta', 'error');
+    }
+  }, [showNotification]);
 
   const handleSaveBrandSettings = useCallback(async (settings: BrandSettings) => {
     try {
@@ -600,12 +622,15 @@ const App: React.FC = () => {
                       totalExpenses={totals.totalExpenses}
                       balance={totals.balance}
                       upcomingCount={totals.upcomingCount}
+                      accounts={accounts}
+                      transactions={transactions}
                     />
                     <UpcomingBills
                       transactions={transactions}
                       onTogglePaidStatus={handleTogglePaidStatus}
                       allCategoriesMap={allCategoriesMap}
                     />
+                    <BalanceEvolutionChart transactions={transactions} />
                     <ExpenseChart transactions={transactions} allCategoriesMap={allCategoriesMap} />
                   </>
                 )}
@@ -683,6 +708,9 @@ const App: React.FC = () => {
                       <button type="button" className="button-secondary justify-center" onClick={() => setIsCategoryModalOpen(true)}>
                         {t('categories')}
                       </button>
+                      <button type="button" className="button-secondary justify-center" onClick={() => setIsAccountModalOpen(true)}>
+                        Contas bancárias
+                      </button>
                       {user.role === 'admin' ? (
                         <button type="button" className="button-secondary justify-center" onClick={() => setIsAppSettingsModalOpen(true)}>
                           {t('app_settings')}
@@ -745,6 +773,7 @@ const App: React.FC = () => {
         }}
         className="fixed bottom-8 right-5 z-40 hidden h-14 w-14 items-center justify-center rounded-full bg-[var(--app-primary)] text-white shadow-[0_18px_45px_rgba(99,102,241,0.4)] transition hover:scale-105 sm:flex"
         aria-label={t('create_transaction')}
+        data-tooltip={t('create_transaction')}
       >
         <PlusIcon className="h-7 w-7" />
       </button>
@@ -789,6 +818,8 @@ const App: React.FC = () => {
         allCategoriesMap={allCategoriesMap}
         allCategoryKeys={allCategoryKeys}
         customCategories={customCategories}
+        onAddCategory={handleAddCategory}
+        accounts={accounts}
       />
 
       <ManageCategoriesModal
@@ -851,6 +882,14 @@ const App: React.FC = () => {
         }}
         onConfirm={handleConfirmStatementImport}
         allCategoriesMap={allCategoriesMap}
+      />
+
+      <AccountManagerModal
+        isOpen={isAccountModalOpen}
+        accounts={accounts}
+        onClose={() => setIsAccountModalOpen(false)}
+        onAdd={handleAddAccount}
+        onDelete={handleDeleteAccount}
       />
 
       <CsvColumnMappingModal

@@ -25,7 +25,7 @@ interface ExpenseChartProps {
 }
 
 const ExpenseChart: React.FC<ExpenseChartProps> = ({ transactions, allCategoriesMap }) => {
-  const { t, locale, formatCurrency } = useLanguage();
+  const { t, locale: appLocale, formatCurrency } = useLanguage();
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
   const [chartType, setChartType] = useState<'pie' | 'bar'>('pie');
@@ -77,8 +77,20 @@ const ExpenseChart: React.FC<ExpenseChartProps> = ({ transactions, allCategories
   }, [transactions, viewMode, allCategoriesMap]);
 
   const NoDataDisplay = () => (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-8 text-center">
-        <p className="text-slate-400">{t('no_expense_data')}</p>
+    <div className="rounded-[24px] border border-dashed border-white/10 bg-slate-900/30 px-6 py-12 text-center">
+      <svg className="mx-auto mb-4 h-14 w-14 text-slate-700" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="6" y="36" width="10" height="20" rx="3" fill="currentColor" opacity="0.5" />
+        <rect x="21" y="24" width="10" height="32" rx="3" fill="currentColor" opacity="0.7" />
+        <rect x="36" y="14" width="10" height="42" rx="3" fill="currentColor" />
+        <rect x="51" y="28" width="10" height="28" rx="3" fill="currentColor" opacity="0.6" />
+        <line x1="4" y1="58" x2="60" y2="58" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+      <p className="font-semibold text-slate-300">{t('no_expense_data')}</p>
+      <p className="mt-1 text-sm text-slate-500">
+        {appLocale === 'en-US'
+          ? 'Add expenses to see the distribution by category.'
+          : 'Adicione despesas para ver a distribuição por categoria.'}
+      </p>
     </div>
   );
 
