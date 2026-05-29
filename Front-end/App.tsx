@@ -19,6 +19,7 @@ import BrandSettingsModal from './components/BrandSettingsModal';
 import InviteManagementModal from './components/InviteManagementModal';
 import AppSettingsModal from './components/AppSettingsModal';
 import { buildTransactionsCsv, buildTransactionsCsvFilename } from './lib/transactions';
+import { exportTransactionsPdf } from './lib/pdf-export';
 import ExpenseChart from './components/ExpenseChart';
 import BalanceEvolutionChart from './components/BalanceEvolutionChart';
 import AccountManagerModal from './components/AccountManagerModal';
@@ -348,6 +349,24 @@ const App: React.FC = () => {
     }
   }, [showNotification, t]);
 
+  const handleExportPdf = useCallback(() => {
+    if (transactions.length === 0) {
+      showNotification(t('export_csv_empty'), 'error');
+      return;
+    }
+    const symbol = appSettings.currency === 'USD' ? '$' : 'R$';
+    const period = filters.preset === 'current_month' || !filters.from
+      ? new Date().toISOString().slice(0, 7)
+      : filters.from.slice(0, 7);
+    exportTransactionsPdf({
+      transactions,
+      allCategoriesMap,
+      productName: brandSettings.productName,
+      currencySymbol: symbol,
+      period,
+    });
+  }, [allCategoriesMap, appSettings.currency, brandSettings.productName, filters, showNotification, t, transactions]);
+
   const handleExportCsv = useCallback(() => {
     if (transactions.length === 0) {
       showNotification(t('export_csv_empty'), 'error');
@@ -662,6 +681,7 @@ const App: React.FC = () => {
                   onOpenCategoryModal={() => setIsCategoryModalOpen(true)}
                   onExportCsv={handleExportCsv}
                   onExportJson={handleExportJson}
+                  onExportPdf={handleExportPdf}
                   onImportJson={handleImportJson}
                   onImportStatementCsv={handleImportStatementCsv}
                   onImportStatementOfx={handleImportStatementOfx}

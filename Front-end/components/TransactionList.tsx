@@ -19,6 +19,7 @@ interface TransactionListProps {
   onOpenCategoryModal: () => void;
   onExportCsv: () => void;
   onExportJson: () => void;
+  onExportPdf: () => void;
   onImportJson: (file: File) => void;
   onImportStatementCsv: (file: File) => void;
   onImportStatementOfx: (file: File) => void;
@@ -37,6 +38,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
   onOpenCategoryModal,
   onExportCsv,
   onExportJson,
+  onExportPdf,
   onImportJson,
   onImportStatementCsv,
   onImportStatementOfx,
@@ -272,10 +274,13 @@ const TransactionList: React.FC<TransactionListProps> = ({
             </button>
             {showExportMenu && (
               <div className="absolute right-0 top-full z-20 mt-1.5 min-w-[160px] rounded-2xl border border-white/10 bg-slate-900 py-1.5 shadow-xl">
+                <button type="button" className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800" onClick={() => { onExportPdf(); setShowExportMenu(false); }}>
+                  PDF
+                </button>
                 <button type="button" className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800" onClick={() => { onExportCsv(); setShowExportMenu(false); }}>
                   CSV
                 </button>
-                <button type="button" className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800" onClick={() => { onExportJson(); setShowExportMenu(false); }}>
+                <button type="button" className="w-full px-4 py-2.5 text-left text-sm text-slate-400 hover:bg-slate-800" onClick={() => { onExportJson(); setShowExportMenu(false); }}>
                   JSON (backup)
                 </button>
               </div>
