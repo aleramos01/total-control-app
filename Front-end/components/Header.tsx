@@ -31,7 +31,7 @@ const Header: React.FC<HeaderProps> = ({ brandSettings, user }) => {
 
   return (
     <header
-      className={`sticky top-0 z-30 border border-white/10 bg-slate-800/95 backdrop-blur transition-all duration-300 ${
+      className={`sticky top-0 z-30 will-change-transform border border-white/10 bg-slate-800 transition-all duration-300 ${
         scrolled
           ? 'mb-3 rounded-2xl px-5 py-2.5 shadow-[0_4px_24px_rgba(15,23,42,0.5)]'
           : 'mb-6 rounded-[28px] px-5 py-6 shadow-[0_20px_70px_rgba(15,23,42,0.45)]'
