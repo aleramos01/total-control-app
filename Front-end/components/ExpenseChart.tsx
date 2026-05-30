@@ -51,7 +51,8 @@ const ExpenseChart: React.FC<ExpenseChartProps> = ({ transactions, allCategories
     
     const filteredTransactions = transactions.filter(tx => {
         const txDate = new Date(tx.date);
-        return tx.type === TransactionType.EXPENSE && txDate >= startDate && txDate <= endDate;
+        // Exclude transfers — they are balance-neutral and not real spending
+        return tx.type === TransactionType.EXPENSE && !tx.transferToAccountId && txDate >= startDate && txDate <= endDate;
     });
 
     const totalExpenses = filteredTransactions.reduce((acc, tx) => acc + tx.amount, 0);
