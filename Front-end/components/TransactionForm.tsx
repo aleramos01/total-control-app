@@ -215,6 +215,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
     const isTransfer = formType === 'transfer';
 
+    // Guard: transfer requires both source and destination accounts
+    if (isTransfer && (!accountId || !transferToAccountId)) {
+      return;
+    }
+
     onSave({
       id: transaction?.id,
       description,
@@ -369,7 +374,15 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                 </div>
               </section>
 
-              {accounts && accounts.length > 0 ? (
+              {formType === 'transfer' && (!accounts || accounts.length === 0) ? (
+                <section className="rounded-[24px] border border-amber-500/30 bg-amber-500/5 p-4">
+                  <p className="text-sm font-semibold text-amber-300">⚠️ Nenhuma conta cadastrada</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Para fazer uma transferência você precisa ter pelo menos duas contas bancárias cadastradas.
+                    Acesse <strong className="text-slate-200">Contas bancárias</strong> no menu para adicionar.
+                  </p>
+                </section>
+              ) : accounts && accounts.length > 0 ? (
                 formType === 'transfer' ? (
                   <section className="rounded-[24px] border border-cyan-500/20 bg-cyan-500/5 p-4 space-y-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-400">Transferência entre contas</p>
@@ -618,7 +631,13 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
               <div className="sticky bottom-0 flex justify-end gap-3 border-t border-white/10 bg-slate-800/95 px-1 pb-1 pt-4 backdrop-blur">
                 <button type="button" onClick={onClose} className="button-secondary">{t('cancel')}</button>
-                <button type="submit" className="button-primary">{transaction ? t('save_changes') : t('save')}</button>
+                <button
+                  type="submit"
+                  className="button-primary"
+                  disabled={formType === 'transfer' && (!accountId || !transferToAccountId)}
+                >
+                  {transaction ? t('save_changes') : t('save')}
+                </button>
               </div>
             </form>
           </div>
