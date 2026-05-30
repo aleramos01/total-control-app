@@ -650,6 +650,7 @@ const App: React.FC = () => {
                       upcomingCount={totals.upcomingCount}
                       accounts={accounts}
                       transactions={transactions}
+                      onAddAccount={() => setIsAccountModalOpen(true)}
                     />
                     <UpcomingBills
                       transactions={transactions}

@@ -9,6 +9,7 @@ interface DashboardProps {
   upcomingCount: number;
   accounts?: Account[];
   transactions?: Transaction[];
+  onAddAccount?: () => void;
 }
 
 const ACCOUNT_ICON_MAP: Record<string, string> = {
@@ -23,6 +24,7 @@ const NO_TRANSACTIONS: Transaction[] = [];
 const Dashboard: React.FC<DashboardProps> = ({
   totalIncome, totalExpenses, balance, upcomingCount,
   accounts = NO_ACCOUNTS, transactions = NO_TRANSACTIONS,
+  onAddAccount,
 }) => {
   const { t, formatCurrency } = useLanguage();
 
@@ -73,31 +75,54 @@ const Dashboard: React.FC<DashboardProps> = ({
         ))}
       </section>
 
-      {accountBalances.length > 0 && (
+      {(accountBalances.length > 0 || onAddAccount) && (
         <section className="mb-6 animate-fade-in-up rounded-[28px] border border-white/10 bg-slate-800/70 p-5 shadow-[0_18px_50px_rgba(15,23,42,0.28)] backdrop-blur" style={{ animationDelay: '320ms' }}>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Saldo por conta</p>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {accountBalances.map(acc => (
-              <div
-                key={acc.id}
-                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3"
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Saldo por conta</p>
+            {onAddAccount ? (
+              <button
+                type="button"
+                onClick={onAddAccount}
+                title="Adicionar conta"
+                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-slate-700/60 text-slate-300 transition hover:border-[var(--app-primary)] hover:bg-slate-700 hover:text-white"
               >
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg"
-                  style={{ backgroundColor: `${acc.color}22` }}
-                >
-                  {ACCOUNT_ICON_MAP[acc.icon] ?? '🏦'}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-100">{acc.name}</p>
-                  {acc.bank ? <p className="text-xs text-slate-500">{acc.bank}</p> : null}
-                </div>
-                <p className={`font-bold ${acc.currentBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                  {formatCurrency(acc.currentBalance)}
-                </p>
-              </div>
-            ))}
+                <span className="text-base font-bold leading-none">+</span>
+              </button>
+            ) : null}
           </div>
+          {accountBalances.length === 0 ? (
+            <button
+              type="button"
+              onClick={onAddAccount}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/10 bg-slate-900/40 px-4 py-5 text-sm text-slate-400 transition hover:border-[var(--app-primary)] hover:text-slate-200"
+            >
+              <span className="text-lg font-bold">+</span>
+              Adicionar primeira conta
+            </button>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {accountBalances.map(acc => (
+                <div
+                  key={acc.id}
+                  className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3"
+                >
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg"
+                    style={{ backgroundColor: `${acc.color}22` }}
+                  >
+                    {ACCOUNT_ICON_MAP[acc.icon] ?? '🏦'}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-100">{acc.name}</p>
+                    {acc.bank ? <p className="text-xs text-slate-500">{acc.bank}</p> : null}
+                  </div>
+                  <p className={`font-bold ${acc.currentBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {formatCurrency(acc.currentBalance)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
     </>
