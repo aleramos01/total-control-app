@@ -30,12 +30,12 @@ export function exportTransactionsPdf(options: PdfExportOptions): void {
   const marginX = 14;
   const now = new Date().toLocaleDateString('pt-BR');
 
-  // ── Totals ────────────────────────────────────────────────────────────────
+  // ── Totals (transfers excluded — they are balance-neutral) ────────────────
   const totalIncome = transactions
-    .filter(t => t.type === TransactionType.INCOME)
+    .filter(t => t.type === TransactionType.INCOME && !t.transferToAccountId)
     .reduce((s, t) => s + t.amount, 0);
   const totalExpense = transactions
-    .filter(t => t.type === TransactionType.EXPENSE)
+    .filter(t => t.type === TransactionType.EXPENSE && !t.transferToAccountId)
     .reduce((s, t) => s + t.amount, 0);
   const balance = totalIncome - totalExpense;
 
@@ -88,13 +88,15 @@ export function exportTransactionsPdf(options: PdfExportOptions): void {
   );
 
   const tableBody = sorted.map(tx => {
-    const categoryName = allCategoriesMap[tx.category]?.name ?? tx.category;
-    const isExpense = tx.type === TransactionType.EXPENSE;
+    const isTransfer = Boolean(tx.transferToAccountId);
+    const categoryName = isTransfer ? 'Transferência' : (allCategoriesMap[tx.category]?.name ?? tx.category);
+    const isExpense = tx.type === TransactionType.EXPENSE && !isTransfer;
+    const typeLabel = isTransfer ? 'Transferência' : isExpense ? 'Despesa' : 'Receita';
     return [
       fmtDate(tx.date),
       tx.description,
       categoryName,
-      isExpense ? 'Despesa' : 'Receita',
+      typeLabel,
       fmtAmount(tx.amount, currencySymbol),
     ];
   });
@@ -132,15 +134,25 @@ export function exportTransactionsPdf(options: PdfExportOptions): void {
     didParseCell(data) {
       // Color the type column and amount column
       if (data.column.index === 3 && data.section === 'body') {
-        const isExpense = data.cell.raw === 'Despesa';
-        data.cell.styles.textColor = isExpense ? [251, 113, 133] : [52, 211, 153];
+        const raw = data.cell.raw as string;
+        if (raw === 'Transferência') {
+          data.cell.styles.textColor = [34, 211, 238]; // cyan
+        } else if (raw === 'Despesa') {
+          data.cell.styles.textColor = [251, 113, 133]; // rose
+        } else {
+          data.cell.styles.textColor = [52, 211, 153]; // emerald
+        }
       }
       if (data.column.index === 4 && data.section === 'body') {
         const row = sorted[data.row.index];
         if (row) {
-          data.cell.styles.textColor = row.type === TransactionType.EXPENSE
-            ? [251, 113, 133]
-            : [52, 211, 153];
+          if (row.transferToAccountId) {
+            data.cell.styles.textColor = [34, 211, 238]; // cyan for transfers
+          } else {
+            data.cell.styles.textColor = row.type === TransactionType.EXPENSE
+              ? [251, 113, 133]
+              : [52, 211, 153];
+          }
         }
       }
     },

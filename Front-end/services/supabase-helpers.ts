@@ -60,6 +60,7 @@ export type DbTransactionRow = {
   is_paid: boolean;
   notes: string | null;
   account_id?: string | null;
+  transfer_to_account_id?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -153,6 +154,7 @@ export function mapTransactionRow(row: DbTransactionRow): Transaction {
     isPaid: row.is_paid,
     notes: row.notes,
     accountId: row.account_id ?? null,
+    transferToAccountId: row.transfer_to_account_id ?? null,
   };
 }
 
@@ -259,6 +261,7 @@ export function buildTransactionInsertRows(
       is_paid: Boolean(transaction.isPaid),
       notes: transaction.notes ?? null,
       account_id: transaction.accountId ?? null,
+      transfer_to_account_id: transaction.transferToAccountId ?? null,
       created_at: now,
       updated_at: now,
     };
@@ -288,6 +291,7 @@ export function buildTransactionUpdateRow(
     is_paid: Boolean(transaction.isPaid),
     notes: transaction.notes ?? null,
     account_id: transaction.accountId ?? null,
+    transfer_to_account_id: transaction.transferToAccountId ?? null,
     updated_at: now,
   };
 }
@@ -329,6 +333,8 @@ export function buildTransactionSeriesUpdateRows(
       due_date: nextDueDate,
       is_paid: Boolean(transaction.isPaid),
       notes: transaction.notes ?? null,
+      account_id: transaction.accountId ?? null,
+      transfer_to_account_id: transaction.transferToAccountId ?? null,
       updated_at: now,
     };
   });

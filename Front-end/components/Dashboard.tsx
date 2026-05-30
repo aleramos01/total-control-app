@@ -29,12 +29,20 @@ const Dashboard: React.FC<DashboardProps> = ({
   const accountBalances = useMemo(() => {
     if (accounts.length === 0) return [];
 
-    // Pre-index transactions by accountId (O(n)) so per-account lookup is O(1)
+    // Pre-index transactions by accountId (O(n)) so per-account lookup is O(1).
+    // Transfers: source account loses the amount, destination account gains it.
     const netByAccount = new Map<string, number>();
     for (const tx of transactions) {
-      if (!tx.accountId) continue;
-      const delta = tx.type === TransactionType.INCOME ? tx.amount : -tx.amount;
-      netByAccount.set(tx.accountId, (netByAccount.get(tx.accountId) ?? 0) + delta);
+      if (tx.transferToAccountId) {
+        // Transfer: money moves between accounts — net-zero for overall wealth
+        if (tx.accountId) {
+          netByAccount.set(tx.accountId, (netByAccount.get(tx.accountId) ?? 0) - tx.amount);
+        }
+        netByAccount.set(tx.transferToAccountId, (netByAccount.get(tx.transferToAccountId) ?? 0) + tx.amount);
+      } else if (tx.accountId) {
+        const delta = tx.type === TransactionType.INCOME ? tx.amount : -tx.amount;
+        netByAccount.set(tx.accountId, (netByAccount.get(tx.accountId) ?? 0) + delta);
+      }
     }
 
     return accounts.map(acc => ({

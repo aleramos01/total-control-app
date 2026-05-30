@@ -181,11 +181,13 @@ const App: React.FC = () => {
   }, [customCategories, locale]);
 
   const totals = useMemo(() => {
+    // Transfers (transferToAccountId set) are excluded from income/expense totals —
+    // they are balance-neutral (money moves between accounts, not in/out of net worth).
     const totalIncome = transactions
-      .filter(transaction => transaction.type === TransactionType.INCOME)
+      .filter(transaction => transaction.type === TransactionType.INCOME && !transaction.transferToAccountId)
       .reduce((sum, transaction) => sum + transaction.amount, 0);
     const totalExpenses = transactions
-      .filter(transaction => transaction.type === TransactionType.EXPENSE)
+      .filter(transaction => transaction.type === TransactionType.EXPENSE && !transaction.transferToAccountId)
       .reduce((sum, transaction) => sum + transaction.amount, 0);
     const upcomingCount = transactions.filter(transaction => transaction.isRecurring && transaction.dueDate).length;
     return {

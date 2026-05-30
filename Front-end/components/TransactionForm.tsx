@@ -46,6 +46,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const [quickCategoryName, setQuickCategoryName] = useState('');
   const [quickCategoryColor, setQuickCategoryColor] = useState('#3B82F6');
   const [isSavingQuickCategory, setIsSavingQuickCategory] = useState(false);
+  // 'transfer' is a UI-only virtual type: saved as EXPENSE + transferToAccountId
+  const [formType, setFormType] = useState<'income' | 'expense' | 'transfer'>('expense');
+  const [transferToAccountId, setTransferToAccountId] = useState<string | null>(null);
   const [saveScope, setSaveScope] = useState<TransactionScope>('single');
   const isInstallmentSeries = Boolean(transaction?.seriesId && (transaction.installmentCount ?? 0) > 1);
   const shouldLockSeriesStructure = Boolean(transaction?.seriesId);
@@ -53,10 +56,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   useEffect(() => {
     if (transaction) {
       const resolvedScheduleType = transaction.scheduleType ?? (transaction.installmentCount && transaction.installmentCount > 1 ? 'installment' : transaction.isRecurring ? 'recurring' : 'once');
+      const isTransfer = Boolean(transaction.transferToAccountId);
       setDescription(stripInstallmentSuffix(transaction.description));
       setAmount(String(transaction.amount));
       setDate(extractDateInputValue(transaction.date));
       setType(transaction.type);
+      setFormType(isTransfer ? 'transfer' : transaction.type === TransactionType.INCOME ? 'income' : 'expense');
       setCategory(transaction.category);
       setScheduleType(resolvedScheduleType);
       setInstallmentCount(transaction.installmentCount ?? 2);
@@ -65,15 +70,18 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       setIsPaid(!!transaction.isPaid);
       setNotes(transaction.notes ?? '');
       setAccountId(transaction.accountId ?? null);
+      setTransferToAccountId(transaction.transferToAccountId ?? null);
       setIsCategoryManuallySet(true);
       setSaveScope('single');
       setIsAdvancedOpen(
-        !!transaction.notes || (
-          transaction.type === TransactionType.EXPENSE && (
-          resolvedScheduleType !== 'once'
-          || !!transaction.dueDate
-          || !!transaction.isPaid
-        )
+        !isTransfer && (
+          !!transaction.notes || (
+            transaction.type === TransactionType.EXPENSE && (
+              resolvedScheduleType !== 'once'
+              || !!transaction.dueDate
+              || !!transaction.isPaid
+            )
+          )
         )
       );
       return;
@@ -83,6 +91,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     setAmount('');
     setDate(new Date().toISOString().split('T')[0]);
     setType(TransactionType.EXPENSE);
+    setFormType('expense');
     setCategory('other');
     setScheduleType('once');
     setInstallmentCount(2);
@@ -91,10 +100,21 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     setIsPaid(false);
     setNotes('');
     setAccountId(null);
+    setTransferToAccountId(null);
     setIsCategoryManuallySet(false);
     setIsAdvancedOpen(false);
     setSaveScope('single');
   }, [transaction, isOpen]);
+
+  // Sync the internal TransactionType when formType changes
+  useEffect(() => {
+    if (formType === 'income') {
+      setType(TransactionType.INCOME);
+    } else {
+      // 'expense' and 'transfer' both store as EXPENSE
+      setType(TransactionType.EXPENSE);
+    }
+  }, [formType]);
 
   useEffect(() => {
     if (isCategoryManuallySet) {
@@ -105,7 +125,16 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   }, [allCategoriesMap, allCategoryKeys, description, isCategoryManuallySet, type]);
 
   useEffect(() => {
-    if (type === TransactionType.INCOME) {
+    if (formType === 'income') {
+      setScheduleType('once');
+      setInstallmentCount(2);
+      setIsRecurring(false);
+      setDueDate('');
+      setIsPaid(true);
+      return;
+    }
+
+    if (formType === 'transfer') {
       setScheduleType('once');
       setInstallmentCount(2);
       setIsRecurring(false);
@@ -117,10 +146,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     if (!transaction || transaction.type !== TransactionType.EXPENSE) {
       setIsPaid(false);
     }
-  }, [transaction, type]);
+  }, [transaction, formType]);
 
   useEffect(() => {
-    if (type !== TransactionType.EXPENSE) {
+    if (formType !== 'expense') {
       return;
     }
 
@@ -140,11 +169,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     setInstallmentCount(2);
     setDueDate('');
     setIsPaid(false);
-  }, [scheduleType, type]);
+  }, [scheduleType, formType]);
 
   const resolvedCategoryName = allCategoriesMap[category]?.name ?? t('category');
   const summarySchedule = useMemo(() => {
-    if (type !== TransactionType.EXPENSE) {
+    if (formType !== 'expense') {
       return null;
     }
 
@@ -157,7 +186,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     }
 
     return null;
-  }, [scheduleType, t, type]);
+  }, [scheduleType, t, formType]);
 
   const handleSaveQuickCategory = async () => {
     if (!quickCategoryName.trim() || !onAddCategory) return;
@@ -184,20 +213,23 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       return;
     }
 
+    const isTransfer = formType === 'transfer';
+
     onSave({
       id: transaction?.id,
       description,
       amount: parseFloat(amount),
       date: toStoredDate(date),
       type,
-      category,
-      scheduleType: type === TransactionType.EXPENSE ? scheduleType : 'once',
-      installmentCount: type === TransactionType.EXPENSE && scheduleType === 'installment' ? installmentCount : 1,
-      isRecurring: type === TransactionType.EXPENSE && scheduleType === 'recurring',
-      dueDate: type === TransactionType.EXPENSE && scheduleType === 'recurring' && dueDate ? toStoredDate(dueDate) : undefined,
-      isPaid: type === TransactionType.EXPENSE ? isPaid : true,
-      notes,
+      category: isTransfer ? 'transfer' : category,
+      scheduleType: formType === 'expense' ? scheduleType : 'once',
+      installmentCount: formType === 'expense' && scheduleType === 'installment' ? installmentCount : 1,
+      isRecurring: formType === 'expense' && scheduleType === 'recurring',
+      dueDate: formType === 'expense' && scheduleType === 'recurring' && dueDate ? toStoredDate(dueDate) : undefined,
+      isPaid: formType === 'expense' ? isPaid : true,
+      notes: isTransfer ? null : notes,
       accountId: accountId ?? null,
+      transferToAccountId: isTransfer ? (transferToAccountId ?? null) : null,
     }, saveScope);
   };
 
@@ -226,7 +258,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('type')}</p>
-                  <p className="mt-1 text-base font-semibold text-slate-50">{type === TransactionType.INCOME ? t('income') : t('expenses')}</p>
+                  <p className="mt-1 text-base font-semibold text-slate-50">
+                    {formType === 'income' ? t('income') : formType === 'transfer' ? 'Transferência' : t('expenses')}
+                  </p>
                 </div>
                 {summarySchedule ? (
                   <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200">
@@ -237,8 +271,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
               <div className="mt-4 grid gap-3 sm:grid-cols-[1.2fr_0.8fr]">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('amount')}</p>
-                  <p className={`mt-1 text-3xl font-bold ${type === TransactionType.INCOME ? 'text-emerald-300' : 'text-rose-200'}`}>
-                    {type === TransactionType.INCOME ? '+' : '-'} {amountPreview}
+                  <p className={`mt-1 text-3xl font-bold ${formType === 'income' ? 'text-emerald-300' : formType === 'transfer' ? 'text-cyan-300' : 'text-rose-200'}`}>
+                    {formType === 'income' ? '+' : formType === 'transfer' ? '↔' : '-'} {amountPreview}
                   </p>
                 </div>
                 <div>
@@ -279,22 +313,30 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
               <section className="rounded-[24px] border border-white/10 bg-slate-900/60 p-4">
                 <div className="mb-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('type')}</p>
-                  <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-slate-950/70 p-1">
+                  <div className="mt-3 grid grid-cols-3 gap-1.5 rounded-2xl bg-slate-950/70 p-1">
                     <button
                       type="button"
-                      onClick={() => !shouldLockSeriesStructure && setType(TransactionType.EXPENSE)}
+                      onClick={() => !shouldLockSeriesStructure && setFormType('expense')}
                       disabled={shouldLockSeriesStructure}
-                      className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${type === TransactionType.EXPENSE ? 'bg-rose-500/20 text-rose-100' : 'text-slate-400'}`}
+                      className={`rounded-2xl px-2 py-3 text-sm font-semibold transition ${formType === 'expense' ? 'bg-rose-500/20 text-rose-100' : 'text-slate-400'}`}
                     >
                       {t('expenses')}
                     </button>
                     <button
                       type="button"
-                      onClick={() => !shouldLockSeriesStructure && setType(TransactionType.INCOME)}
+                      onClick={() => !shouldLockSeriesStructure && setFormType('income')}
                       disabled={shouldLockSeriesStructure}
-                      className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${type === TransactionType.INCOME ? 'bg-emerald-500/20 text-emerald-100' : 'text-slate-400'}`}
+                      className={`rounded-2xl px-2 py-3 text-sm font-semibold transition ${formType === 'income' ? 'bg-emerald-500/20 text-emerald-100' : 'text-slate-400'}`}
                     >
                       {t('income')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => !shouldLockSeriesStructure && setFormType('transfer')}
+                      disabled={shouldLockSeriesStructure}
+                      className={`rounded-2xl px-2 py-3 text-sm font-semibold transition ${formType === 'transfer' ? 'bg-cyan-500/20 text-cyan-100' : 'text-slate-400'}`}
+                    >
+                      ↔ Transferir
                     </button>
                   </div>
                 </div>
@@ -328,23 +370,75 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
               </section>
 
               {accounts && accounts.length > 0 ? (
-                <section className="rounded-[24px] border border-white/10 bg-slate-900/60 p-4">
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Conta</label>
-                  <select
-                    value={accountId ?? ''}
-                    onChange={e => setAccountId(e.target.value || null)}
-                    className="input-base"
-                  >
-                    <option value="">Sem conta vinculada</option>
-                    {accounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.name}{acc.bank ? ` · ${acc.bank}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </section>
+                formType === 'transfer' ? (
+                  <section className="rounded-[24px] border border-cyan-500/20 bg-cyan-500/5 p-4 space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-400">Transferência entre contas</p>
+                    <div>
+                      <label className="mb-2 block text-xs font-semibold text-slate-400">De (origem)</label>
+                      <select
+                        value={accountId ?? ''}
+                        onChange={e => setAccountId(e.target.value || null)}
+                        className="input-base"
+                        required
+                      >
+                        <option value="">Selecione a conta de origem</option>
+                        {accounts.map(acc => (
+                          <option key={acc.id} value={acc.id} disabled={acc.id === transferToAccountId}>
+                            {acc.name}{acc.bank ? ` · ${acc.bank}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex justify-center text-cyan-500 text-xl select-none">↓</div>
+                    <div>
+                      <label className="mb-2 block text-xs font-semibold text-slate-400">Para (destino)</label>
+                      <select
+                        value={transferToAccountId ?? ''}
+                        onChange={e => setTransferToAccountId(e.target.value || null)}
+                        className="input-base"
+                        required
+                      >
+                        <option value="">Selecione a conta de destino</option>
+                        {accounts.map(acc => (
+                          <option key={acc.id} value={acc.id} disabled={acc.id === accountId}>
+                            {acc.name}{acc.bank ? ` · ${acc.bank}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="transfer-date" className="mb-2 block text-xs font-semibold text-slate-400">{t('date')}</label>
+                      <input
+                        id="transfer-date"
+                        type="date"
+                        value={date}
+                        onChange={e => setDate(e.target.value)}
+                        className="input-base"
+                        required
+                      />
+                    </div>
+                  </section>
+                ) : (
+                  <section className="rounded-[24px] border border-white/10 bg-slate-900/60 p-4">
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Conta</label>
+                    <select
+                      value={accountId ?? ''}
+                      onChange={e => setAccountId(e.target.value || null)}
+                      className="input-base"
+                    >
+                      <option value="">Sem conta vinculada</option>
+                      {accounts.map(acc => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.name}{acc.bank ? ` · ${acc.bank}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </section>
+                )
               ) : null}
 
+              {formType !== 'transfer' ? (
+              <>
               <section className="rounded-[24px] border border-white/10 bg-slate-900/60 p-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="relative">
@@ -446,7 +540,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
                 {isAdvancedOpen ? (
                   <div className="space-y-4 border-t border-white/10 px-4 pb-4 pt-4">
-                    {type === TransactionType.EXPENSE ? (
+                    {formType === 'expense' ? (
                       <>
                       <div>
                         <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{t('schedule_type')}</label>
@@ -519,6 +613,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                   </div>
                 ) : null}
               </section>
+              </>
+              ) : null}
 
               <div className="sticky bottom-0 flex justify-end gap-3 border-t border-white/10 bg-slate-800/95 px-1 pb-1 pt-4 backdrop-blur">
                 <button type="button" onClick={onClose} className="button-secondary">{t('cancel')}</button>

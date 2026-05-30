@@ -67,6 +67,8 @@ export interface Transaction {
   isPaid?: boolean;
   notes?: string | null;
   accountId?: string | null;
+  /** When set, this transaction is a transfer: money leaves accountId and arrives here. */
+  transferToAccountId?: string | null;
 }
 
 export type AccountType = 'checking' | 'savings' | 'credit_card' | 'investment' | 'cash';
