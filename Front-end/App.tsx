@@ -13,6 +13,7 @@ import * as api from './services/api';
 import Spinner from './components/Spinner';
 import AuthPage from './components/AuthPage';
 import { useAuth } from './hooks/useAuth';
+import { useVersionCheck } from './hooks/useVersionCheck';
 import { Account, AppSettings, BrandSettings, CustomCategory, ExportPayload, ImportPreviewPayload, InviteInfo, StatementImportAction, StatementImportPreview, Transaction, TransactionFilters, TransactionScope, TransactionType } from './types';
 import UpcomingBills from './components/UpcomingBills';
 import BrandSettingsModal from './components/BrandSettingsModal';
@@ -55,6 +56,7 @@ const defaultCurrentMonthFilters: TransactionFilters = {
 type MobileTab = 'summary' | 'transactions' | 'account';
 
 const App: React.FC = () => {
+  useVersionCheck(); // auto-reload when a new Vercel deploy is detected
   const { t, locale } = useLanguage();
   const { showNotification } = useNotification();
   const { settings: appSettings, refreshSettings } = useAppSettings();

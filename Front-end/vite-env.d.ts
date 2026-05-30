@@ -8,3 +8,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// Injected by vite.config.ts define — build timestamp baked into the bundle
+declare const __BUILD_TIME__: string;
