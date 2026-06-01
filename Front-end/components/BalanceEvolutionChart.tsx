@@ -1,25 +1,24 @@
 import React, { useMemo, useState } from 'react';
 import { Transaction, TransactionType } from '../types';
 import { useLanguage } from '../LanguageContext';
+import { getAvailableMonths } from '../lib/transactions';
 
 interface BalanceEvolutionChartProps {
   transactions: Transaction[];
 }
 
-type Period = '30d' | '3m' | '6m' | '12m';
+type Period = '3m' | '6m' | '1a' | 'all';
 
 interface PeriodOption {
   id: Period;
   label: string;
-  days: number;
-  bucketDays: number;
 }
 
 const PERIODS: PeriodOption[] = [
-  { id: '30d', label: '30 dias', days: 30,  bucketDays: 1  },
-  { id: '3m',  label: '3 meses', days: 90,  bucketDays: 7  },
-  { id: '6m',  label: '6 meses', days: 180, bucketDays: 30 },
-  { id: '12m', label: '12 meses',days: 365, bucketDays: 30 },
+  { id: '3m',  label: '3 meses' },
+  { id: '6m',  label: '6 meses' },
+  { id: '1a',  label: '1 ano'   },
+  { id: 'all', label: 'Tudo'    },
 ];
 
 interface Bucket {
@@ -58,27 +57,77 @@ function formatCompact(value: number, currency: string): string {
 
 const BalanceEvolutionChart: React.FC<BalanceEvolutionChartProps> = ({ transactions }) => {
   const { formatCurrency } = useLanguage();
-  const [period, setPeriod] = useState<Period>('3m');
+  const [period, setPeriod] = useState<Period>('all');
+  const [specificMonth, setSpecificMonth] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
 
-  const opt = PERIODS.find(p => p.id === period)!;
+  const availableMonths = useMemo(() => getAvailableMonths(transactions), [transactions]);
 
   const buckets = useMemo((): Bucket[] => {
     const now = new Date();
-    const startMs = now.getTime() - opt.days * 86_400_000;
-    const bucketMs = opt.bucketDays * 86_400_000;
-    const count = Math.ceil(opt.days / opt.bucketDays);
+
+    if (specificMonth) {
+      const [year, month] = specificMonth.split('-').map(Number);
+      const startMs = new Date(year, month - 1, 1).getTime();
+      const endOfMonth = new Date(year, month, 0);
+      const count = endOfMonth.getDate();
+      const endMs = endOfMonth.getTime() + 86_400_000 - 1;
+
+      const result: Bucket[] = Array.from({ length: count }, (_, i) => {
+        const d = new Date(year, month - 1, i + 1);
+        const label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        return { label, income: 0, expense: 0, balance: 0 };
+      });
+
+      transactions.forEach(tx => {
+        const txMs = new Date(tx.date).getTime();
+        if (txMs < startMs || txMs > endMs) return;
+        const idx = Math.min(Math.floor((txMs - startMs) / 86_400_000), count - 1);
+        if (tx.type === TransactionType.INCOME && !tx.transferToAccountId) {
+          result[idx].income += tx.amount;
+        } else if (!tx.transferToAccountId) {
+          result[idx].expense += tx.amount;
+        }
+      });
+
+      let running = transactions.reduce((acc, tx) => {
+        const txMs = new Date(tx.date).getTime();
+        if (txMs >= startMs) return acc;
+        if (tx.transferToAccountId) return acc;
+        return tx.type === TransactionType.INCOME ? acc + tx.amount : acc - tx.amount;
+      }, 0);
+
+      result.forEach(b => {
+        running += b.income - b.expense;
+        b.balance = running;
+      });
+
+      return result;
+    }
+
+    let startMs: number;
+    let bucketDays: number;
+
+    if (period === 'all') {
+      if (transactions.length === 0) return [];
+      const dates = transactions.map(tx => new Date(tx.date).getTime());
+      startMs = Math.min(...dates);
+      bucketDays = 30;
+    } else {
+      const days = period === '3m' ? 90 : period === '6m' ? 180 : 365;
+      startMs = now.getTime() - days * 86_400_000;
+      bucketDays = period === '3m' ? 7 : 30;
+    }
+
+    const bucketMs = bucketDays * 86_400_000;
+    const totalMs = now.getTime() - startMs;
+    const count = Math.max(1, Math.ceil(totalMs / bucketMs));
 
     const result: Bucket[] = Array.from({ length: count }, (_, i) => {
       const d = new Date(startMs + i * bucketMs);
-      let label: string;
-      if (opt.bucketDays === 1) {
-        label = d.toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' });
-      } else if (opt.bucketDays === 7) {
-        label = d.toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' });
-      } else {
-        label = d.toLocaleDateString('pt-BR', { timeZone: 'UTC', month: 'short' });
-      }
+      const label = bucketDays <= 7
+        ? d.toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })
+        : d.toLocaleDateString('pt-BR', { timeZone: 'UTC', month: 'short', year: '2-digit' });
       return { label, income: 0, expense: 0, balance: 0 };
     });
 
@@ -91,26 +140,23 @@ const BalanceEvolutionChart: React.FC<BalanceEvolutionChartProps> = ({ transacti
       } else if (!tx.transferToAccountId) {
         result[idx].expense += tx.amount;
       }
-      // transferências (transferToAccountId set) são ignoradas — neutras ao patrimônio
     });
 
-    // Saldo inicial: soma de todas as transações ANTES do período selecionado
-    let running = transactions.reduce((acc, tx) => {
+    const running0 = period === 'all' ? 0 : transactions.reduce((acc, tx) => {
       const txMs = new Date(tx.date).getTime();
       if (txMs >= startMs) return acc;
-      if (tx.transferToAccountId) return acc; // neutro ao patrimônio
-      return tx.type === TransactionType.INCOME
-        ? acc + tx.amount
-        : acc - tx.amount;
+      if (tx.transferToAccountId) return acc;
+      return tx.type === TransactionType.INCOME ? acc + tx.amount : acc - tx.amount;
     }, 0);
 
+    let running = running0;
     result.forEach(b => {
       running += b.income - b.expense;
       b.balance = running;
     });
 
     return result;
-  }, [transactions, opt]);
+  }, [transactions, period, specificMonth]);
 
   const yMax = useMemo(() => {
     const peak = Math.max(
@@ -152,19 +198,40 @@ const BalanceEvolutionChart: React.FC<BalanceEvolutionChartProps> = ({ transacti
           <h2 className="text-xl font-bold text-slate-50">Evolução do Saldo</h2>
           <p className="text-sm text-slate-400">Entradas, saídas e saldo acumulado no período</p>
         </div>
-        <div className="flex rounded-xl border border-white/10 bg-slate-900/60 p-0.5">
-          {PERIODS.map(p => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => setPeriod(p.id)}
-              className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
-                period === p.id ? 'bg-slate-700 text-slate-50' : 'text-slate-400 hover:text-slate-200'
-              }`}
+        <div className="flex flex-wrap items-center gap-1">
+          <div className="flex rounded-xl border border-white/10 bg-slate-900/60 p-0.5">
+            {PERIODS.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => { setPeriod(p.id); setSpecificMonth(null); }}
+                className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
+                  !specificMonth && period === p.id ? 'bg-slate-700 text-slate-50' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {availableMonths.length > 0 && (
+            <select
+              value={specificMonth ?? ''}
+              onChange={e => {
+                const val = e.target.value;
+                if (val) setSpecificMonth(val);
+                else { setSpecificMonth(null); setPeriod('all'); }
+              }}
+              className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-1.5 text-xs font-semibold text-slate-400 transition hover:text-slate-200 focus:outline-none"
             >
-              {p.label}
-            </button>
-          ))}
+              <option value="">Mês específico</option>
+              {availableMonths.map(m => {
+                const [year, month] = m.split('-');
+                const label = new Date(Number(year), Number(month) - 1, 1)
+                  .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+                return <option key={m} value={m}>{label}</option>;
+              })}
+            </select>
+          )}
         </div>
       </div>
 
