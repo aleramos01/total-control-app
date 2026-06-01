@@ -86,14 +86,24 @@ const BalanceEvolutionChart: React.FC<BalanceEvolutionChartProps> = ({ transacti
       const txMs = new Date(tx.date).getTime();
       if (txMs < startMs || txMs > now.getTime()) return;
       const idx = Math.min(Math.floor((txMs - startMs) / bucketMs), count - 1);
-      if (tx.type === TransactionType.INCOME) {
+      if (tx.type === TransactionType.INCOME && !tx.transferToAccountId) {
         result[idx].income += tx.amount;
-      } else {
+      } else if (!tx.transferToAccountId) {
         result[idx].expense += tx.amount;
       }
+      // transferências (transferToAccountId set) são ignoradas — neutras ao patrimônio
     });
 
-    let running = 0;
+    // Saldo inicial: soma de todas as transações ANTES do período selecionado
+    let running = transactions.reduce((acc, tx) => {
+      const txMs = new Date(tx.date).getTime();
+      if (txMs >= startMs) return acc;
+      if (tx.transferToAccountId) return acc; // neutro ao patrimônio
+      return tx.type === TransactionType.INCOME
+        ? acc + tx.amount
+        : acc - tx.amount;
+    }, 0);
+
     result.forEach(b => {
       running += b.income - b.expense;
       b.balance = running;
