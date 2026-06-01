@@ -274,7 +274,7 @@ export function hasActiveTransactionFilters(filters: TransactionFilters) {
     || filters.status
     || filters.from
     || filters.to
-    || (filters.preset && filters.preset !== 'current_month')
+    || (filters.preset && filters.preset !== '')
   );
 }
 
@@ -389,4 +389,12 @@ export function getUpcomingBills(transactions: Transaction[], today = new Date()
     })
     .filter(transaction => transaction.diffDays <= 30)
     .sort((left, right) => left.diffDays - right.diffDays);
+}
+
+export function getAvailableMonths(transactions: Transaction[]): string[] {
+  const months = new Set<string>();
+  for (const tx of transactions) {
+    months.add(tx.date.slice(0, 7));
+  }
+  return [...months].sort((a, b) => b.localeCompare(a));
 }

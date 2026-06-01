@@ -5,6 +5,7 @@ import {
   buildTransactionsCsv,
   buildTransactionsCsvFilename,
   formatDatePtBr,
+  getAvailableMonths,
   getUpcomingBills,
   hasActiveTransactionFilters,
   parseDatePtBr,
@@ -255,4 +256,34 @@ test('suggestCategoryFromDescription maps dividends to investments', () => {
   );
 
   assert.equal(category, 'investments');
+});
+
+test('getAvailableMonths returns unique months sorted descending', () => {
+  const make = (date: string): Transaction => ({
+    id: date,
+    date,
+    description: 'test',
+    amount: 100,
+    type: TransactionType.EXPENSE,
+    category: 'food',
+    isRecurring: false,
+    isPaid: true,
+    dueDate: null,
+    accountId: null,
+    transferToAccountId: null,
+  });
+
+  const txs = [
+    make('2026-05-15'),
+    make('2026-05-20'),
+    make('2026-04-10'),
+    make('2026-06-01'),
+  ];
+
+  const months = getAvailableMonths(txs);
+  assert.deepEqual(months, ['2026-06', '2026-05', '2026-04']);
+});
+
+test('getAvailableMonths returns empty array for empty input', () => {
+  assert.deepEqual(getAvailableMonths([]), []);
 });
