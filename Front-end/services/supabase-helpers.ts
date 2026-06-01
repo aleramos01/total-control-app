@@ -333,8 +333,8 @@ export function buildTransactionSeriesUpdateRows(
       due_date: nextDueDate,
       is_paid: Boolean(transaction.isPaid),
       notes: transaction.notes ?? null,
-      account_id: transaction.accountId ?? null,
-      transfer_to_account_id: transaction.transferToAccountId ?? null,
+      // account_id e transfer_to_account_id intencionalmente omitidos:
+      // cada parcela preserva sua própria conta — editar a série não redistribui contas.
       updated_at: now,
     };
   });
