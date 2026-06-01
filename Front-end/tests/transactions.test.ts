@@ -287,3 +287,27 @@ test('getAvailableMonths returns unique months sorted descending', () => {
 test('getAvailableMonths returns empty array for empty input', () => {
   assert.deepEqual(getAvailableMonths([]), []);
 });
+
+test('getAvailableMonths handles ISO 8601 datetime format', () => {
+  const make = (date: string): Transaction => ({
+    id: date,
+    date,
+    description: 'test',
+    amount: 100,
+    type: TransactionType.EXPENSE,
+    category: 'food',
+    isRecurring: false,
+    isPaid: true,
+    dueDate: null,
+    accountId: null,
+    transferToAccountId: null,
+  });
+
+  const txs = [
+    make('2026-05-15T14:30:00.000Z'),
+    make('2026-04-10T09:00:00.000Z'),
+  ];
+
+  const months = getAvailableMonths(txs);
+  assert.deepEqual(months, ['2026-05', '2026-04']);
+});
