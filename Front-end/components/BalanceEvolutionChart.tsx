@@ -68,14 +68,14 @@ const BalanceEvolutionChart: React.FC<BalanceEvolutionChartProps> = ({ transacti
 
     if (specificMonth) {
       const [year, month] = specificMonth.split('-').map(Number);
-      const startMs = new Date(year, month - 1, 1).getTime();
-      const endOfMonth = new Date(year, month, 0);
-      const count = endOfMonth.getDate();
-      const endMs = endOfMonth.getTime() + 86_400_000 - 1;
+      const startMs = Date.UTC(year, month - 1, 1);
+      const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const count = daysInMonth;
+      const endMs = Date.UTC(year, month, 0) + 86_400_000 - 1;
 
       const result: Bucket[] = Array.from({ length: count }, (_, i) => {
-        const d = new Date(year, month - 1, i + 1);
-        const label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const d = new Date(Date.UTC(year, month - 1, i + 1));
+        const label = d.toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' });
         return { label, income: 0, expense: 0, balance: 0 };
       });
 
@@ -110,8 +110,10 @@ const BalanceEvolutionChart: React.FC<BalanceEvolutionChartProps> = ({ transacti
 
     if (period === 'all') {
       if (transactions.length === 0) return [];
-      const dates = transactions.map(tx => new Date(tx.date).getTime());
-      startMs = Math.min(...dates);
+      startMs = transactions.reduce((min, tx) => {
+        const ms = new Date(tx.date).getTime();
+        return ms < min ? ms : min;
+      }, Infinity);
       bucketDays = 30;
     } else {
       const days = period === '3m' ? 90 : period === '6m' ? 180 : 365;
