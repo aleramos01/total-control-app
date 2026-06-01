@@ -635,7 +635,7 @@ const App: React.FC = () => {
               title={t('sync_error_title')}
               description={dataError}
               actionLabel={t('retry_action')}
-              onAction={fetchSummaryData}
+              onAction={() => { fetchSummaryData(); fetchFilteredTransactions(); }}
             />
           </div>
         ) : null}
@@ -669,7 +669,7 @@ const App: React.FC = () => {
                     title={t('sync_error_title')}
                     description={dataError ?? t('startup_error_description')}
                     actionLabel={t('retry_action')}
-                    onAction={fetchSummaryData}
+                    onAction={() => { fetchSummaryData(); fetchFilteredTransactions(); }}
                   />
                 ) : (
                   <>
@@ -700,7 +700,7 @@ const App: React.FC = () => {
                   title={t('sync_error_title')}
                   description={dataError ?? t('startup_error_description')}
                   actionLabel={t('retry_action')}
-                  onAction={fetchSummaryData}
+                  onAction={() => { fetchSummaryData(); fetchFilteredTransactions(); }}
                 />
               ) : (
                 <TransactionList
