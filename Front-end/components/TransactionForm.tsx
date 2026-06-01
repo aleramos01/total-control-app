@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Account, Transaction, TransactionScope, TransactionType, CustomCategory } from '../types';
 import { useLanguage } from '../LanguageContext';
+import { useNotification } from '../NotificationContext';
 import { extractDateInputValue, stripInstallmentSuffix, suggestCategoryFromDescription, toStoredDate } from '../lib/transactions';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { XCircleIcon } from './icons/XCircleIcon';
@@ -23,6 +24,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   isOpen, onClose, onSave, transaction, allCategoriesMap, allCategoryKeys, onAddCategory, accounts,
 }) => {
   const { t, locale } = useLanguage();
+  const { showNotification } = useNotification();
   const scheduleLabels = {
     once: t('schedule_once'),
     recurring: t('schedule_recurring'),
@@ -217,6 +219,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
     // Guard: transfer requires both source and destination accounts
     if (isTransfer && (!accountId || !transferToAccountId)) {
+      showNotification('Selecione a conta de origem e de destino para a transferência.', 'error');
       return;
     }
 
