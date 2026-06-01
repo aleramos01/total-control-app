@@ -3,6 +3,7 @@ import { Transaction, TransactionType } from '../types';
 import { useLanguage } from '../LanguageContext';
 import { PieChartIcon } from './icons/PieChartIcon';
 import { BarChartIcon } from './icons/BarChartIcon';
+import { getAvailableMonths } from '../lib/transactions';
 
 interface ChartData {
   category: string;
@@ -27,42 +28,38 @@ interface ExpenseChartProps {
 const ExpenseChart: React.FC<ExpenseChartProps> = ({ transactions, allCategoriesMap }) => {
   const { t, locale: appLocale, formatCurrency } = useLanguage();
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
-  const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
+  type ChartPeriod = '3m' | '6m' | '1a' | 'all';
+  const [period, setPeriod] = useState<ChartPeriod>('all');
+  const [specificMonth, setSpecificMonth] = useState<string | null>(null);
   const [chartType, setChartType] = useState<'pie' | 'bar'>('pie');
 
+  const availableMonths = useMemo(() => getAvailableMonths(transactions), [transactions]);
+
   const chartData = useMemo((): ChartData[] => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    let startMs: number | null = null;
+    let endMs: number | null = null;
 
-    let startDate: Date;
-    let endDate: Date = new Date();
-    endDate.setHours(23, 59, 59, 999);
-
-    if (viewMode === 'month') {
-        startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-        endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    } else { 
-        const dayOfWeek = today.getDay(); 
-        startDate = new Date(today);
-        startDate.setDate(today.getDate() - dayOfWeek);
-        endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + 6);
+    if (specificMonth) {
+      const [year, month] = specificMonth.split('-').map(Number);
+      startMs = Date.UTC(year, month - 1, 1);
+      endMs = Date.UTC(year, month, 0) + 86_400_000 - 1;
+    } else if (period !== 'all') {
+      const days = period === '3m' ? 90 : period === '6m' ? 180 : 365;
+      endMs = Date.now();
+      startMs = endMs - days * 86_400_000;
     }
-    
-    const filteredTransactions = transactions.filter(tx => {
-        const txDate = new Date(tx.date);
-        // Exclude transfers — they are balance-neutral and not real spending
-        return tx.type === TransactionType.EXPENSE && !tx.transferToAccountId && txDate >= startDate && txDate <= endDate;
+
+    const filtered = transactions.filter(tx => {
+      if (tx.type !== TransactionType.EXPENSE || tx.transferToAccountId) return false;
+      if (startMs === null) return true;
+      const txMs = new Date(tx.date).getTime();
+      return txMs >= startMs && txMs <= endMs!;
     });
 
-    const totalExpenses = filteredTransactions.reduce((acc, tx) => acc + tx.amount, 0);
+    const totalExpenses = filtered.reduce((acc, tx) => acc + tx.amount, 0);
+    if (totalExpenses === 0) return [];
 
-    if (totalExpenses === 0) {
-      return [];
-    }
-
-    // FIX: Explicitly type the accumulator of the reduce function.
-    const categoryTotals = filteredTransactions.reduce((acc: Record<string, number>, tx) => {
+    const categoryTotals = filtered.reduce((acc: Record<string, number>, tx) => {
       acc[tx.category] = (acc[tx.category] || 0) + tx.amount;
       return acc;
     }, {});
@@ -75,7 +72,7 @@ const ExpenseChart: React.FC<ExpenseChartProps> = ({ transactions, allCategories
         color: allCategoriesMap[categoryKey]?.color || '#6B7280',
       }))
       .sort((a, b) => b.value - a.value);
-  }, [transactions, viewMode, allCategoriesMap]);
+  }, [transactions, period, specificMonth, allCategoriesMap]);
 
   const NoDataDisplay = () => (
     <div className="rounded-[24px] border border-dashed border-white/10 bg-slate-900/30 px-6 py-12 text-center">
@@ -135,9 +132,41 @@ const ExpenseChart: React.FC<ExpenseChartProps> = ({ transactions, allCategories
         <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
             <h2 className="text-2xl font-bold text-slate-300">{t('expense_distribution')}</h2>
             <div className="flex items-center gap-2">
-                <div className="flex items-center text-sm bg-slate-900/50 p-1 rounded-lg">
-                    <button onClick={() => setViewMode('week')} className={`py-1 px-3 rounded-md transition-colors ${viewMode === 'week' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>{t('this_week')}</button>
-                    <button onClick={() => setViewMode('month')} className={`py-1 px-3 rounded-md transition-colors ${viewMode === 'month' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>{t('this_month')}</button>
+                <div className="flex flex-wrap items-center gap-1">
+                  <div className="flex items-center text-sm bg-slate-900/50 p-1 rounded-lg">
+                    {(['3m', '6m', '1a', 'all'] as ChartPeriod[]).map(p => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => { setPeriod(p); setSpecificMonth(null); }}
+                        className={`py-1 px-3 rounded-md transition-colors ${
+                          !specificMonth && period === p ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {p === '3m' ? '3 meses' : p === '6m' ? '6 meses' : p === '1a' ? '1 ano' : 'Tudo'}
+                      </button>
+                    ))}
+                  </div>
+                  {availableMonths.length > 0 && (
+                    <select
+                      value={specificMonth ?? ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val) setSpecificMonth(val);
+                        else { setSpecificMonth(null); setPeriod('all'); }
+                      }}
+                      aria-label="Selecionar mês específico"
+                      className="text-sm bg-slate-900/50 p-1 rounded-lg text-slate-400 hover:text-white transition focus:outline-none"
+                    >
+                      <option value="">Mês específico</option>
+                      {availableMonths.map(m => {
+                        const [year, month] = m.split('-');
+                        const label = new Date(Number(year), Number(month) - 1, 1)
+                          .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+                        return <option key={m} value={m}>{label}</option>;
+                      })}
+                    </select>
+                  )}
                 </div>
                 <div className="flex items-center text-sm bg-slate-900/50 p-1 rounded-lg">
                     <button onClick={() => setChartType('pie')} aria-label={t('pie_chart_aria')} className={`p-1.5 rounded-md transition-colors ${chartType === 'pie' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}> <PieChartIcon className="h-5 w-5"/> </button>
