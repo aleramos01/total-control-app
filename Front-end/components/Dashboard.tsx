@@ -35,11 +35,9 @@ const Dashboard: React.FC<DashboardProps> = ({
     // Transfers: source account loses the amount, destination account gains it.
     const netByAccount = new Map<string, number>();
     for (const tx of transactions) {
-      if (tx.transferToAccountId) {
-        // Transfer: money moves between accounts — net-zero for overall wealth
-        if (tx.accountId) {
-          netByAccount.set(tx.accountId, (netByAccount.get(tx.accountId) ?? 0) - tx.amount);
-        }
+      if (tx.transferToAccountId && tx.accountId) {
+        // Transferência válida: ambas as contas devem existir para mover o saldo
+        netByAccount.set(tx.accountId, (netByAccount.get(tx.accountId) ?? 0) - tx.amount);
         netByAccount.set(tx.transferToAccountId, (netByAccount.get(tx.transferToAccountId) ?? 0) + tx.amount);
       } else if (tx.accountId) {
         const delta = tx.type === TransactionType.INCOME ? tx.amount : -tx.amount;
