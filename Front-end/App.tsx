@@ -50,7 +50,7 @@ const emptyBrandSettings: BrandSettings = {
 };
 
 const defaultCurrentMonthFilters: TransactionFilters = {
-  preset: 'current_month',
+  preset: '',
 };
 
 type MobileTab = 'summary' | 'transactions' | 'account';
@@ -63,13 +63,14 @@ const App: React.FC = () => {
   const { user, isAuthenticated, logout } = useAuth();
 
   const [brandSettings, setBrandSettings] = useState<BrandSettings>(emptyBrandSettings);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
+  const [summaryTransactions, setSummaryTransactions] = useState<Transaction[]>([]);
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [bootstrappingError, setBootstrappingError] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<TransactionFilters>(defaultCurrentMonthFilters);
+  const [transactionFilters, setTransactionFilters] = useState<TransactionFilters>(defaultCurrentMonthFilters);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -129,9 +130,9 @@ const App: React.FC = () => {
     }
   }, [appSettings.billingDayDefault, appSettings.timezone, brandSettings, locale]);
 
-  const fetchData = useCallback(async () => {
+  const fetchSummaryData = useCallback(async () => {
     if (!isAuthenticated) {
-      setTransactions([]);
+      setSummaryTransactions([]);
       setCustomCategories([]);
       setDataError(null);
       setIsLoading(false);
@@ -142,14 +143,14 @@ const App: React.FC = () => {
     setDataError(null);
     try {
       const [transactionsData, categoriesData, accountsData] = await Promise.all([
-        api.fetchTransactions(filters),
+        api.fetchTransactions({}),
         api.fetchCustomCategories(),
         api.fetchAccounts().catch((err: unknown) => {
           console.error('[fetchAccounts] failed:', err);
           return [] as Account[];
         }),
       ]);
-      setTransactions(transactionsData);
+      setSummaryTransactions(transactionsData);
       setCustomCategories(categoriesData);
       setAccounts(accountsData);
     } catch (error) {
@@ -159,11 +160,29 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [filters, isAuthenticated, showNotification]);
+  }, [isAuthenticated, showNotification]);
+
+  const fetchFilteredTransactions = useCallback(async () => {
+    if (!isAuthenticated) {
+      setFilteredTransactions([]);
+      return;
+    }
+    try {
+      const data = await api.fetchTransactions(transactionFilters);
+      setFilteredTransactions(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch transactions';
+      showNotification(message, 'error');
+    }
+  }, [isAuthenticated, transactionFilters, showNotification]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchSummaryData();
+  }, [fetchSummaryData]);
+
+  useEffect(() => {
+    fetchFilteredTransactions();
+  }, [fetchFilteredTransactions]);
 
   const { allCategoriesMap, allCategoryKeys } = useMemo(() => {
     const map: { [key: string]: { name: string; color: string } } = {};
@@ -185,29 +204,32 @@ const App: React.FC = () => {
   const totals = useMemo(() => {
     // Transfers (transferToAccountId set) are excluded from income/expense totals —
     // they are balance-neutral (money moves between accounts, not in/out of net worth).
-    const totalIncome = transactions
+    const totalIncome = summaryTransactions
       .filter(transaction => transaction.type === TransactionType.INCOME && !transaction.transferToAccountId)
       .reduce((sum, transaction) => sum + transaction.amount, 0);
-    const totalExpenses = transactions
+    const totalExpenses = summaryTransactions
       .filter(transaction => transaction.type === TransactionType.EXPENSE && !transaction.transferToAccountId)
       .reduce((sum, transaction) => sum + transaction.amount, 0);
-    const upcomingCount = transactions.filter(transaction => transaction.isRecurring && transaction.dueDate).length;
+    const upcomingCount = summaryTransactions.filter(transaction => transaction.isRecurring && transaction.dueDate).length;
     return {
       totalIncome,
       totalExpenses,
       balance: totalIncome - totalExpenses,
       upcomingCount,
     };
-  }, [transactions]);
+  }, [summaryTransactions]);
 
   const handleSaveTransaction = useCallback(async (transaction: Omit<Transaction, 'id'> & { id?: string }, scope: TransactionScope) => {
     try {
       const savedTransactions = await api.saveTransactionBatch(transaction, scope);
       if (transaction.id) {
         const updatedMap = new Map(savedTransactions.map(item => [item.id, item]));
-        setTransactions(prev => prev.map(item => updatedMap.get(item.id) ?? item));
+        const updater = (prev: Transaction[]) => prev.map(item => updatedMap.get(item.id) ?? item);
+        setFilteredTransactions(updater);
+        setSummaryTransactions(updater);
       } else {
-        fetchData();
+        fetchSummaryData();
+        fetchFilteredTransactions();
       }
       const successMessage = !transaction.id
         ? t('transaction_added_success')
@@ -221,12 +243,13 @@ const App: React.FC = () => {
       const message = error instanceof Error ? error.message : 'Failed to save transaction';
       showNotification(message, 'error');
     }
-  }, [fetchData, showNotification, t]);
+  }, [fetchSummaryData, fetchFilteredTransactions, showNotification, t]);
 
   const handleDeleteTransaction = useCallback(async (id: string) => {
     try {
       await api.deleteTransaction(id);
-      setTransactions(prev => prev.filter(item => item.id !== id));
+      setFilteredTransactions(prev => prev.filter(item => item.id !== id));
+      setSummaryTransactions(prev => prev.filter(item => item.id !== id));
       showNotification(t('transaction_deleted_success'), 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to delete transaction';
@@ -237,7 +260,8 @@ const App: React.FC = () => {
   const handleDeleteTransactions = useCallback(async (ids: string[]) => {
     try {
       await api.deleteTransactions(ids);
-      setTransactions(prev => prev.filter(item => !ids.includes(item.id)));
+      setFilteredTransactions(prev => prev.filter(item => !ids.includes(item.id)));
+      setSummaryTransactions(prev => prev.filter(item => !ids.includes(item.id)));
       showNotification(t('transactions_deleted_success').replace('{count}', String(ids.length)), 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to delete transactions';
@@ -248,7 +272,9 @@ const App: React.FC = () => {
   const handleTogglePaidStatus = useCallback(async (id: string, isPaid: boolean) => {
     try {
       const updatedTransaction = await api.toggleTransactionPaidStatus(id, isPaid);
-      setTransactions(prev => prev.map(item => item.id === id ? updatedTransaction : item));
+      const updater = (prev: Transaction[]) => prev.map(item => item.id === id ? updatedTransaction : item);
+      setFilteredTransactions(updater);
+      setSummaryTransactions(updater);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update transaction';
       showNotification(message, 'error');
@@ -259,7 +285,9 @@ const App: React.FC = () => {
     try {
       const updatedTransactions = await api.toggleTransactionsPaidStatus(ids, isPaid);
       const updatedMap = new Map(updatedTransactions.map(transaction => [transaction.id, transaction]));
-      setTransactions(prev => prev.map(item => updatedMap.get(item.id) ?? item));
+      const updater = (prev: Transaction[]) => prev.map(item => updatedMap.get(item.id) ?? item);
+      setFilteredTransactions(updater);
+      setSummaryTransactions(updater);
       showNotification(
         (isPaid ? t('transactions_marked_paid_success') : t('transactions_marked_unpaid_success')).replace('{count}', String(updatedTransactions.length)),
         'success',
@@ -354,29 +382,29 @@ const App: React.FC = () => {
   }, [showNotification, t]);
 
   const handleExportPdf = useCallback(() => {
-    if (transactions.length === 0) {
+    if (filteredTransactions.length === 0) {
       showNotification(t('export_csv_empty'), 'error');
       return;
     }
     const symbol = appSettings.currency === 'USD' ? '$' : 'R$';
-    const period = filters.preset === 'current_month' || !filters.from
+    const period = transactionFilters.preset === 'current_month' || !transactionFilters.from
       ? new Date().toISOString().slice(0, 7)
-      : filters.from.slice(0, 7);
+      : transactionFilters.from.slice(0, 7);
     exportTransactionsPdf({
-      transactions,
+      transactions: filteredTransactions,
       allCategoriesMap,
       productName: brandSettings.productName,
       currencySymbol: symbol,
       period,
     });
-  }, [allCategoriesMap, appSettings.currency, brandSettings.productName, filters, showNotification, t, transactions]);
+  }, [allCategoriesMap, appSettings.currency, brandSettings.productName, transactionFilters, showNotification, t, filteredTransactions]);
 
   const handleExportCsv = useCallback(() => {
-    if (transactions.length === 0) {
+    if (filteredTransactions.length === 0) {
       showNotification(t('export_csv_empty'), 'error');
       return;
     }
-    const csv = buildTransactionsCsv(transactions, allCategoriesMap);
+    const csv = buildTransactionsCsv(filteredTransactions, allCategoriesMap);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -384,7 +412,7 @@ const App: React.FC = () => {
     link.download = buildTransactionsCsvFilename();
     link.click();
     URL.revokeObjectURL(url);
-  }, [allCategoriesMap, showNotification, t, transactions]);
+  }, [allCategoriesMap, showNotification, t, filteredTransactions]);
 
   const handleExportJson = useCallback(async () => {
     try {
@@ -520,14 +548,15 @@ const App: React.FC = () => {
       });
       setImportPreview(null);
       showNotification(t('import_success'), 'success');
-      fetchData();
+      fetchSummaryData();
+      fetchFilteredTransactions();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to import data';
       showNotification(message, 'error');
     } finally {
       setIsImporting(false);
     }
-  }, [fetchData, importPreview, showNotification, t]);
+  }, [fetchSummaryData, fetchFilteredTransactions, importPreview, showNotification, t]);
 
   const handleConfirmStatementImport = useCallback(async (actions: StatementImportAction[]) => {
     if (actions.length === 0) {
@@ -545,14 +574,15 @@ const App: React.FC = () => {
           .replace('{created}', String(result.created.length)),
         'success',
       );
-      fetchData();
+      fetchSummaryData();
+      fetchFilteredTransactions();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to reconcile statement';
       showNotification(message, 'error');
     } finally {
       setIsStatementImporting(false);
     }
-  }, [fetchData, showNotification, t]);
+  }, [fetchSummaryData, fetchFilteredTransactions, showNotification, t]);
 
   if (isBootstrapping) {
     return (
@@ -589,7 +619,7 @@ const App: React.FC = () => {
     { id: 'transactions', label: t('transactions'), Icon: CalendarIcon },
     { id: 'account', label: t('user_menu'), Icon: CogIcon },
   ];
-  const shouldBlockDataViews = Boolean(dataError && !isLoading && transactions.length === 0 && customCategories.length === 0);
+  const shouldBlockDataViews = Boolean(dataError && !isLoading && summaryTransactions.length === 0 && customCategories.length === 0);
 
   return (
     <div className="min-h-screen bg-[var(--app-bg)] px-4 pb-28 pt-6 text-[var(--app-text)] sm:px-6 sm:pb-12">
@@ -605,7 +635,7 @@ const App: React.FC = () => {
               title={t('sync_error_title')}
               description={dataError}
               actionLabel={t('retry_action')}
-              onAction={fetchData}
+              onAction={fetchSummaryData}
             />
           </div>
         ) : null}
@@ -639,7 +669,7 @@ const App: React.FC = () => {
                     title={t('sync_error_title')}
                     description={dataError ?? t('startup_error_description')}
                     actionLabel={t('retry_action')}
-                    onAction={fetchData}
+                    onAction={fetchSummaryData}
                   />
                 ) : (
                   <>
@@ -649,16 +679,16 @@ const App: React.FC = () => {
                       balance={totals.balance}
                       upcomingCount={totals.upcomingCount}
                       accounts={accounts}
-                      transactions={transactions}
+                      transactions={summaryTransactions}
                       onAddAccount={() => setIsAccountModalOpen(true)}
                     />
                     <UpcomingBills
-                      transactions={transactions}
+                      transactions={summaryTransactions}
                       onTogglePaidStatus={handleTogglePaidStatus}
                       allCategoriesMap={allCategoriesMap}
                     />
-                    <BalanceEvolutionChart transactions={transactions} />
-                    <ExpenseChart transactions={transactions} allCategoriesMap={allCategoriesMap} />
+                    <BalanceEvolutionChart transactions={summaryTransactions} />
+                    <ExpenseChart transactions={summaryTransactions} allCategoriesMap={allCategoriesMap} />
                   </>
                 )}
               </>
@@ -670,15 +700,15 @@ const App: React.FC = () => {
                   title={t('sync_error_title')}
                   description={dataError ?? t('startup_error_description')}
                   actionLabel={t('retry_action')}
-                  onAction={fetchData}
+                  onAction={fetchSummaryData}
                 />
               ) : (
                 <TransactionList
-                  transactions={transactions}
-                  filters={filters}
-                  onFiltersChange={setFilters}
+                  transactions={filteredTransactions}
+                  filters={transactionFilters}
+                  onFiltersChange={setTransactionFilters}
                   onEdit={(id) => {
-                    const transaction = transactions.find(item => item.id === id) ?? null;
+                    const transaction = filteredTransactions.find(item => item.id === id) ?? null;
                     setEditingTransaction(transaction);
                     setIsModalOpen(true);
                   }}
@@ -690,7 +720,7 @@ const App: React.FC = () => {
                   onImportJson={handleImportJson}
                   onImportStatementCsv={handleImportStatementCsv}
                   onImportStatementOfx={handleImportStatementOfx}
-                  onResetFilters={() => setFilters(defaultCurrentMonthFilters)}
+                  onResetFilters={() => setTransactionFilters(defaultCurrentMonthFilters)}
                   onDeleteMany={handleDeleteTransactions}
                   onTogglePaidMany={handleTogglePaidMany}
                   allCategoriesMap={allCategoriesMap}
