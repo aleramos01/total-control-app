@@ -274,7 +274,7 @@ export function hasActiveTransactionFilters(filters: TransactionFilters) {
     || filters.status
     || filters.from
     || filters.to
-    || (filters.preset && filters.preset !== '')
+    || filters.preset
   );
 }
 

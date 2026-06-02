@@ -51,7 +51,7 @@ test('buildTransactionQuery preserves manual date ranges together with other fil
 });
 
 test('hasActiveTransactionFilters ignores the default current month preset', () => {
-  assert.equal(hasActiveTransactionFilters({ preset: 'current_month' }), false);
+  assert.equal(hasActiveTransactionFilters({ preset: 'current_month' }), true);
   assert.equal(hasActiveTransactionFilters({ q: 'mercado', preset: 'current_month' }), true);
   assert.equal(hasActiveTransactionFilters({ preset: 'overdue' }), true);
 });

@@ -106,7 +106,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
     () => selectedTransactions.some(transaction => transaction.type !== 'expense'),
     [selectedTransactions],
   );
-  const periodPresets: Array<{ id: NonNullable<TransactionFilters['preset']>; label: string }> = [
+  const periodPresets: Array<{ id: TransactionFilters['preset']; label: string }> = [
+    { id: '',              label: locale === 'pt-BR' ? 'Todos' : 'All' },
     { id: 'current_month', label: t('current_month') },
     { id: 'previous_month', label: t('previous_month') },
     { id: 'next_30_days', label: t('next_30_days') },
@@ -147,7 +148,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
       });
     }
 
-    if (filters.preset && filters.preset !== 'current_month') {
+    if (filters.preset) {
       const preset = periodPresets.find(item => item.id === filters.preset);
       if (preset) {
         badges.push({
@@ -401,8 +402,8 @@ const TransactionList: React.FC<TransactionListProps> = ({
             <option value="unpaid">{t('unpaid')}</option>
           </select>
           <button type="button" className="button-secondary justify-center md:col-span-2 xl:col-span-5" onClick={() => {
-            syncDraftDates({ preset: 'current_month' });
-            onFiltersChange({ preset: 'current_month' });
+            syncDraftDates({ preset: '' });
+            onFiltersChange({ preset: '' });
           }}>
             {t('clear_filters')}
           </button>
