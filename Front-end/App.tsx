@@ -661,7 +661,7 @@ const App: React.FC = () => {
             <Spinner className="h-8 w-8 text-[var(--app-primary)]" />
           </div>
         ) : (
-          <div className="grid gap-6">
+          <div className="grid gap-6 [grid-template-columns:minmax(0,1fr)]">
             {activeTab === 'summary' ? (
               <>
                 {shouldBlockDataViews ? (

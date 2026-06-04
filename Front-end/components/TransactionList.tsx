@@ -213,14 +213,14 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
   return (
     <section className="rounded-[28px] border border-white/10 bg-slate-800/70 p-5 shadow-[0_18px_50px_rgba(15,23,42,0.28)] backdrop-blur">
-      <div className="mb-5 flex items-start justify-between gap-4">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
           <h2 className="text-xl font-bold text-slate-50">{t('transaction_table_title')}</h2>
           <p className="text-sm text-slate-400">{t('transactions_overview')}</p>
           <p className="mt-2 text-2xl font-extrabold text-cyan-300">{formatCurrency(totalVisible)}</p>
         </div>
         {/* ── Compact toolbar ── */}
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
 
           {/* Select toggle */}
           <button
